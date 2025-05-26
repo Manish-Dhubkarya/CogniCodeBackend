@@ -3,10 +3,10 @@ var router = express.Router();
 var pool = require("./pool")
 // var upload = require("./multer");
 
-router.post('/submit_conference', function (req, res, next) {
+router.post('/submit_publication', function (req, res, next) {
     console.log("REQQQQQQQQQQQQQQQQQ",req)
     try {
-        pool.query("insert into conferences (publisher, conferenceName, area, subject, lastDOfSub, registrationCharges, links) values(?,?,?,?,?,?,?)", [req.body.publisher, req.body.conferenceName, req.body.area, req.body.subject, req.body.lastDOfSub, req.body.registrationCharges, req.body.links], function (error, result) {            
+        pool.query("insert into publications (sourceTitle, citeScore, highestPercentile, citations, documents, cited) values(?,?,?,?,?,?)", [req.body.sourceTitle, req.body.citeScore, req.body.highestPercentile, req.body.citations, req.body.documents, req.body.cited], function (error, result) {            
             if (error) {
                 console.log("ERRRRRRRRR",error)
                return res.status(400).json({ status: false, message: "DataBase Error, Plz Contact DataBase Admin" })
@@ -21,17 +21,17 @@ router.post('/submit_conference', function (req, res, next) {
 
     }
 });
-router.post('/update_conference', function (req, res, next) {
+router.post('/update_publication', function (req, res, next) {
     console.log(req.body)
     console.log(req.file)
     try {
-        pool.query("update conferences set publisher=?, conferenceName=?, area=?, subject=?, lastDOfSub=?, registrationCharges=?, links=? where conferenceId=?", [req.body.publisher, req.body.conferenceName, req.body.area, req.body.subject, req.body.lastDOfSub, req.body.registrationCharges, req.body.links, req.body.conferenceId], function (error, result) {
+        pool.query("update publications set sourceTitle=?, citeScore=?, highestPercentile=?, citations=?, documents=?, cited=? where publicationId=?", [req.body.sourceTitle, req.body.citeScore, req.body.highestPercentile, req.body.citations, req.body.documents, req.body.cited, req.body.publicationId], function (error, result) {
             if (error) {
                 console.log(error)
                return res.status(500).json({ status: false, message: "DataBase Error, Plz Contact DataBase Admin" })
             }
             else {
-               return res.status(200).json({ status: true, message: "Category Updated Successfully!" })
+               return res.status(200).json({ status: true, message: "Publication Updated Successfully!" })
             }
         })
     }
@@ -41,17 +41,17 @@ router.post('/update_conference', function (req, res, next) {
     }
 });
 
-router.post('/delete_conference', function (req, res, next) {
+router.post('/delete_publication', function (req, res, next) {
     console.log(req.body)
     console.log(req.file)
     try {
-        pool.query("delete from conferences where conferenceId=?", [req.body.conferenceId], function (error, result) {
+        pool.query("delete from publications where publicationId=?", [req.body.publicationId], function (error, result) {
             if (error) {
                 console.log(error)
                return res.status(400).json({ status: false, message: "DataBase Error, Plz Contact DataBase Admin" })
             }
             else {
-               return res.status(200).json({ status: true, message: "Category Deleted Successfully!" })
+               return res.status(200).json({ status: true, message: "publication Deleted Successfully!" })
             }
         })
     }
@@ -60,10 +60,10 @@ router.post('/delete_conference', function (req, res, next) {
 
     }
 });
-router.get("/display_all_conferences", function(req, res, next){
+router.get("/display_all_publications", function(req, res, next){
     
     try {
-        pool.query("select * from conferences", function (error, result) {
+        pool.query("select * from publications", function (error, result) {
             if (error) {
                 console.log(error)
                return res.status(400).json({status: false, message: "DataBase Error, Plz Contact DataBase Admin"})
