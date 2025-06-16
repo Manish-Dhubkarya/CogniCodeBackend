@@ -12,9 +12,7 @@ var publicationsRouter = require('./routes/publications')
 var adminRouter = require('./routes/admin')
 var clientInquiryRouter=require('./routes/clientInquiry')
 
-
 var app = express();
-// view engine setup
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
 app.use(cors())
