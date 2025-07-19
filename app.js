@@ -11,6 +11,7 @@ var conferencesRouter = require('./routes/conferences')
 var publicationsRouter = require('./routes/publications')
 var adminRouter = require('./routes/admin')
 var clientInquiryRouter=require('./routes/clientInquiry')
+var employeesRouter=require('./routes/employees')
 
 var app = express();
 app.set('views', path.join(__dirname, 'views'));
@@ -28,7 +29,7 @@ app.use('/conferences', conferencesRouter);
 app.use('/publications', publicationsRouter);
 app.use('/admin', adminRouter);
 app.use('/clientInquiry', clientInquiryRouter)
-
+app.use('/employees', employeesRouter);
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
