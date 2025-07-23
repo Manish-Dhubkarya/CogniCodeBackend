@@ -54,7 +54,7 @@ router.post('/check_login_employee', function (req, res) {
             SELECT * FROM employees
             WHERE ("employeeName" = $1 OR "employeeMail" = $1)
             AND "password" = $2
-            AND "employeeId" = $3
+            AND "employmentID" = $3
         `;
 
         const values = [name, password, employeeId];
@@ -64,7 +64,7 @@ router.post('/check_login_employee', function (req, res) {
                 console.error("Database Error:", error);
                 return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
             } else if (result.rows.length === 0) {
-                return res.status(401).json({ status: false, message: "Invalid credentials or employee ID." });
+                return res.status(400).json({ status: false, message: "Invalid credentials or employee ID." });
             } else {
                 return res.status(200).json({ status: true, message: "Login successful!", data: result.rows[0] });
             }

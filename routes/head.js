@@ -6,7 +6,7 @@ router.post('/check_login_head', function (req, res) {
     console.log("LOGIN DATA RECEIVED:", req.body);
 
     try {
-        const { name, password, securityKey } = req.body;
+        const { name, identifier, password, securityKey } = req.body;
 
         // Validate required fields
         if (!name || !password || !securityKey) {
@@ -15,12 +15,13 @@ router.post('/check_login_head', function (req, res) {
 
         const query = `
             SELECT * FROM head
-            WHERE ("headName" = $1 OR "headMail" = $1)
-            AND "password" = $2
-            AND "headSecurityKey" = $3
+            WHERE "headName" = $1
+            AND ("headMail" = $2 OR "headMobile" = $2)
+            AND "password" = $3
+            AND "headSecurityKey" = $4
         `;
 
-        const values = [name, password, securityKey];
+        const values = [name, identifier, password, securityKey];
 
         pgPool.query(query, values, function (error, result) {
             if (error) {
