@@ -8,16 +8,15 @@ router.post('/register_client', upload.single("clientPic"), function (req, res) 
 
     try {
         const query = `
-            INSERT INTO clients
-            ("clientName", "clientMail", "mobile", "requirement", "password", "department", "degree", "clientPic", "role", "clientSecurityKey") 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO "Entities".clients
+            ("clientName", "clientMail", "mobile", "password", "department", "degree", "clientPic", "role", "clientSecurityKey") 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         `;
 
         const values = [
             req.body.clientName,
             req.body.clientMail,
             req.body.mobile,
-            req.body.requirement,
             req.body.password,
             req.body.department,
             req.body.degree,
@@ -53,7 +52,7 @@ router.post('/check_login_client', function (req, res) {
         }
 
         const query = `
-            SELECT * FROM clients
+            SELECT * FROM "Entities".clients
             WHERE ("clientName" = $1 OR "clientMail" = $1)
             AND "password" = $2
             AND "clientSecurityKey" = $3
