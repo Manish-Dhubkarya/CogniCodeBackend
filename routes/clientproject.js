@@ -2,8 +2,19 @@ var express = require('express');
 var router = express.Router();
 var pgPool = require('./PostgreSQLPool');
 var initializeDatabase = require('./init');
-
+var multer = require('multer');
+var path = require('path');
+var upload = require("./multer");
 initializeDatabase();
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/');
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + path.extname(file.originalname));
+  }
+});
 
 // Save project
 router.post('/save_project', function (req, res) {
@@ -18,8 +29,8 @@ router.post('/save_project', function (req, res) {
 
     const query = `
       INSERT INTO projectschema.clientproject
-      (workstream, title, deadline, budget, description, clientid)
-      VALUES ($1, $2, $3, $4, ARRAY[$5], $6)
+      (workstream, title, deadline, budget, description, clientid, clientchats, clientaudios)
+      VALUES ($1, $2, $3, $4, ARRAY[$5], $6, ARRAY[]::text[], ARRAY[]::text[])
       RETURNING project_id
     `;
 
@@ -109,6 +120,102 @@ router.post('/update_project/:projectId', function (req, res) {
   } catch (e) {
     console.error("Server Error:", e);
     return res.status(500).json({ status: false, message: "Server Error...!" });
+  }
+});
+
+// Add chat to project
+router.post('/add_chat/:projectId', function (req, res) {
+  const { projectId } = req.params;
+  const { type, data } = req.body;
+
+  if (!type || !data) {
+    return res.status(400).json({ status: false, message: "Type and data are required." });
+  }
+
+  const chatJson = JSON.stringify({ type, data });
+
+  try {
+    const query = `
+      UPDATE projectschema.clientproject
+      SET clientchats = array_append(clientchats, $1)
+      WHERE project_id = $2
+      RETURNING project_id, clientchats
+    `;
+
+    pgPool.query(query, [chatJson, projectId], function (error, result) {
+      if (error) {
+        console.error("Database Error:", error);
+        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+      } else if (result.rowCount === 0) {
+        return res.status(404).json({ status: false, message: "Project not found!!" });
+      } else {
+        return res.status(200).json({
+          status: true,
+          message: "Chat added successfully!",
+          data: { project_id: result.rows[0].project_id }
+        });
+      }
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: "Server Error...!" });
+  }
+});
+
+// Add audio to project
+router.post('/add_audio/:projectId', function (req, res) {
+  const { projectId } = req.params;
+  const { type, data } = req.body;
+
+  if (!type || !data) {
+    return res.status(400).json({ status: false, message: "Type and data are required." });
+  }
+
+  const audioJson = JSON.stringify({ type, data });
+
+  try {
+    const query = `
+      UPDATE projectschema.clientproject
+      SET clientaudios = array_append(clientaudios, $1)
+      WHERE project_id = $2
+      RETURNING project_id, clientaudios
+    `;
+
+    pgPool.query(query, [audioJson, projectId], function (error, result) {
+      if (error) {
+        console.error("Database Error:", error);
+        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+      } else if (result.rowCount === 0) {
+        return res.status(404).json({ status: false, message: "Project not found!!" });
+      } else {
+        return res.status(200).json({
+          status: true,
+          message: "Audio added successfully!",
+          data: { project_id: result.rows[0].project_id }
+        });
+      }
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: "Server Error...!" });
+  }
+});
+
+// Upload file
+router.post('/upload_file', upload.single('file'), function (req, res) {
+  console.log("Audio Fileeeeee!!!", req.body)
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ status: false, message: "No file uploaded." });
+    }
+    const projectId = req.body.projectId;
+    // You can use projectId if needed, e.g., to organize files per project
+    const fileUrl = `/uploads/${file.filename}`; // Relative URL
+    return res.status(200).json({ status: true, data: { fileUrl } });
+  } catch (e) {
+    console.error("Upload Error:", e);
+    return res.status(500).json({ status: false, message: "File upload failed." });
   }
 });
 
