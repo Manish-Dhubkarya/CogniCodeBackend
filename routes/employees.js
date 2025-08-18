@@ -3,12 +3,13 @@ var router = express.Router();
 var pgPool = require("./PostgreSQLPool");
 var upload = require("./multer");
 const nodemailer = require('nodemailer');
-require('dotenv').config(); // Load environment variables
+const bcrypt = require('bcrypt');
+require('dotenv').config();
 
 // In-memory store for pending employee registrations (email -> {data, filename, otp, timestamp})
 const pendingEmployees = new Map();
 
-// Gmail transporter
+// Initialize Gmail transporter
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -17,10 +18,10 @@ const transporter = nodemailer.createTransport({
   }
 });
 
-// Verify transporter configuration
+// Verify transporter
 transporter.verify((error, success) => {
   if (error) {
-    console.error("Transporter Error:", error);
+    console.error("Gmail Transporter Error:", error);
   } else {
     console.log("Gmail transporter is ready to send emails");
   }
@@ -38,6 +39,7 @@ router.post('/register_employee', upload.single("employeePic"), async function (
     // Rate limit OTP resends (30 seconds)
     const pending = pendingEmployees.get(email);
     if (pending && Date.now() - pending.timestamp < 30000) {
+      console.log(`Rate limit triggered for ${email}. Last attempt: ${new Date(pending.timestamp).toISOString()}`);
       return res.status(429).json({ status: false, message: "Please wait 30 seconds before resending OTP." });
     }
 
@@ -52,22 +54,25 @@ router.post('/register_employee', upload.single("employeePic"), async function (
       timestamp: Date.now()
     });
 
-    // Send OTP via email
+    // Send OTP via Gmail
     await transporter.sendMail({
-      from: `"Your App" <${process.env.GMAIL_USER}>`,
+      from: process.env.GMAIL_USER,
       to: email,
-      subject: 'Registration OTP',
+      subject: 'Registration OTP for CogniCode Project Management',
       text: `Your registration OTP is ${otp}. It is valid for 10 minutes.`
     });
 
-    return res.status(200).json({ status: true, message: "OTP sent to your email." });
+    return res.status(200).json({ 
+      status: true, 
+      message: `OTP sent to ${email}.`
+    });
   } catch (e) {
     console.error("Server Error:", e);
-    return res.status(500).json({ status: false, message: "Server Error: Failed to send OTP." });
+    return res.status(500).json({ status: false, message: `Server Error: Failed to send OTP to ${req.body.employeeMail}. ${e.message}` });
   }
 });
 
-router.post('/verify_employee_otp', function (req, res) {
+router.post('/verify_employee_otp', async function (req, res) {
   const { email, otp } = req.body;
 
   if (!email || !otp) {
@@ -79,7 +84,6 @@ router.post('/verify_employee_otp', function (req, res) {
     return res.status(400).json({ status: false, message: "No pending registration found." });
   }
 
-  // Check expiration (10 minutes = 600000 ms)
   if (Date.now() - pending.timestamp > 600000) {
     pendingEmployees.delete(email);
     return res.status(400).json({ status: false, message: "OTP has expired." });
@@ -89,20 +93,22 @@ router.post('/verify_employee_otp', function (req, res) {
     return res.status(400).json({ status: false, message: "Invalid OTP." });
   }
 
-  // Proceed with insertion
+  const saltRounds = 10;
+  const hashedPassword = await bcrypt.hash(pending.data.password, saltRounds);
+
   const query = `
     INSERT INTO "Entities".employees
-    ("employeeName", "employeeDesignation", "employeeMail", "employmentID", "password", "gender", "employeePic", "role") 
+    ("employeeName", "employeeMail", "employmentID", "gender", "employeeDesignation", "password", "employeePic", "role") 
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
   `;
 
   const values = [
     pending.data.employeeName,
-    pending.data.employeeDesignation,
     pending.data.employeeMail,
     pending.data.employmentID,
-    pending.data.password,
     pending.data.gender,
+    pending.data.employeeDesignation,
+    hashedPassword,
     pending.filename,
     pending.data.role
   ];
@@ -118,34 +124,43 @@ router.post('/verify_employee_otp', function (req, res) {
   });
 });
 
-router.post('/check_login_employee', function (req, res) {
+router.post('/check_login_employee', async function (req, res) {
   console.log("LOGIN DATA RECEIVED:", req.body);
 
   try {
-    const { name, password, employeeId } = req.body;
+    const { role, name, employmentId, password } = req.body;
 
-    // Validate required fields
-    if (!name || !password || !employeeId) {
-      return res.status(400).json({ status: false, message: "Name/Email, Password, and Employee ID are required." });
+    if (!role || !name || !employmentId || !password) {
+      console.log("ERROOOOOOORR", req.body);
+      return res.status(400).json({ status: false, message: "Role, Name/Email, Employment ID, and Password are required." });
     }
 
     const query = `
-      SELECT * FROM "Entities".employees
-      WHERE ("employeeName" = $1 OR "employeeMail" = $1)
-      AND "password" = $2
+      SELECT * FROM "Entities".employees 
+      WHERE role = $1
+      AND ("employeeName" = $2 OR "employeeMail" = $2)
       AND "employmentID" = $3
     `;
 
-    const values = [name, password, employeeId];
+    const values = [role, name, employmentId];
 
-    pgPool.query(query, values, function (error, result) {
+    console.log("Query Values:", values); // Debug log for query parameters
+
+    pgPool.query(query, values, async function (error, result) {
       if (error) {
-        console.error("Database Error:", error);
+        console.error("Database Erroreeeee:", error);
         return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
       } else if (result.rows.length === 0) {
-        return res.status(400).json({ status: false, message: "Invalid credentials or employee ID." });
+        console.log("No matching user found for:", values); // Debug log for no match
+        return res.status(401).json({ status: false, message: "Invalid credentials." });
       } else {
-        return res.status(200).json({ status: true, message: "Login successful!", data: result.rows[0] });
+        const user = result.rows[0];
+        console.log("Fetched user:", user); // Debug log for fetched user
+        const passwordMatch = await bcrypt.compare(password, user.password);
+        if (!passwordMatch) {
+          return res.status(401).json({ status: false, message: "Invalid password." });
+        }
+        return res.status(200).json({ status: true, message: "Login successful!", data: user });
       }
     });
 
