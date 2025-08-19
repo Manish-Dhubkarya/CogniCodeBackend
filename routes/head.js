@@ -14,7 +14,7 @@ router.post('/check_login_head', function (req, res) {
         }
 
         const query = `
-            SELECT * FROM head
+            SELECT * FROM "Entities".head
             WHERE "headName" = $1
             AND ("headMail" = $2 OR "headMobile" = $2)
             AND "password" = $3
