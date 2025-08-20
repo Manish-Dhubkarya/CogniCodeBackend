@@ -244,4 +244,34 @@ router.get('/get_client_projects/:clientId', function (req, res) {
   }
 });
 
+router.get('/show_all_clientsprojects', function (req, res) {
+  try {
+    const query = `
+      SELECT 
+        cp.project_id,
+        cp.workstream,
+        cp.title,
+        cp.deadline,
+        cp.budget,
+        c."clientName"
+      FROM projectschema.clientproject cp
+      JOIN "Entities".clients c ON cp.clientid = c."clientId"
+      ORDER BY cp.deadline ASC
+    `;
+
+    pgPool.query(query, [], function (error, result) {
+      if (error) {
+        console.error("Database Error:", error);
+        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+      } else {
+        return res.status(200).json({ status: true, message: "All client projects retrieved successfully!", data: result.rows });
+      }
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: "Server Error...!" });
+  }
+});
+
+
 module.exports = router;

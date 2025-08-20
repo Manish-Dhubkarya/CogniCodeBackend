@@ -27,6 +27,35 @@ transporter.verify((error, success) => {
   }
 });
 
+router.post('/save_security_key', async function (req, res) {
+  const { key_id, name, email, mobile } = req.body;
+
+  try {
+    if (!key_id || !name || !email || !mobile) {
+      console.log("hhhh", req.body);
+      return res.status(400).json({ status: false, message: "key_id, name, email, and mobile are required." });
+    }
+    const query = `
+      INSERT INTO "Entities"."ClientSecureKey" ("key_id", "name", "email", "mobile")
+      VALUES ($1, $2, $3, $4);
+    `;
+    const values = [key_id, name, email, mobile];
+
+    pgPool.query(query, values, function (error, result) {
+      if (error) {
+        console.error("Database Error:", error);
+        return res.status(400).json({ status: false, message: "Database Error: " + error.message });
+      } else {
+        return res.status(200).json({ status: true, message: "Security key saved successfully!", data: result.rows[0] });
+      }
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: "Server Error: " + e.message });
+  }
+});
+
+
 router.post('/register_client', upload.single("clientPic"), async function (req, res) {
   console.log("RECEIVED DATA:", req.body);
 
