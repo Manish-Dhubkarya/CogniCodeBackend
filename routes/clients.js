@@ -55,6 +55,93 @@ router.post('/save_security_key', async function (req, res) {
   }
 });
 
+router.post('/edit_client', async function (req, res) {
+  const { key_id, name, email, mobile } = req.body;
+
+  try {
+    if (!key_id || !name || !email || !mobile) {
+      return res.status(400).json({ status: false, message: "key_id, name, email, and mobile are required." });
+    }
+    const query = `
+      UPDATE "Entities"."ClientSecureKey"
+      SET name = $2, email = $3, mobile = $4
+      WHERE key_id = $1
+      RETURNING key_id, name, email, mobile;
+    `;
+    const values = [key_id, name, email, mobile];
+
+    const result = await pgPool.query(query, values);
+    if (result.rowCount === 0) {
+      return res.status(404).json({ status: false, message: "Client not found." });
+    }
+    return res.status(200).json({
+      status: true,
+      message: "Client updated successfully!",
+      data: result.rows[0]
+    });
+  } catch (error) {
+    console.error("Database Error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server Error: " + error.message
+    });
+  }
+});
+
+router.get('/fetch_all_clients', async function (req, res) {
+  try {
+    const query = `
+      SELECT key_id, name, email, mobile
+      FROM "Entities"."ClientSecureKey"
+    `;
+    const result = await pgPool.query(query);
+    return res.status(200).json({
+      status: true,
+      data: result.rows,
+      message: "Clients fetched successfully!"
+    });
+  } catch (error) {
+    console.error("Database Error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server Error: " + error.message
+    });
+  }
+});
+
+router.post('/delete_client', async function (req, res) {
+  const { key_id } = req.body;
+
+  try {
+    if (!key_id) {
+      return res.status(400).json({ status: false, message: "key_id is required." });
+    }
+    const query = `
+      DELETE FROM "Entities"."ClientSecureKey"
+      WHERE key_id = $1
+      RETURNING key_id;
+    `;
+    const values = [key_id];
+
+    const result = await pgPool.query(query, values);
+    if (result.rowCount === 0) {
+      console.log("Client not found for key_id:", key_id);
+      return res.status(404).json({ status: false, message: "Client not found." });
+    }
+    return res.status(200).json({
+      status: true,
+      message: "Client deleted successfully!",
+      data: { key_id }
+    });
+  } catch (error) {
+    console.error("Database Error:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Server Error: " + error.message
+    });
+  }
+});
+
 
 router.post('/register_client', upload.single("clientPic"), async function (req, res) {
   console.log("RECEIVED DATA:", req.body);
