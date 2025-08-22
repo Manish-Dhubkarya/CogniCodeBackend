@@ -72,6 +72,38 @@ router.post('/register_employee', upload.single("employeePic"), async function (
   }
 });
 
+router.post('/upload_employee_image', upload.single("pic"), async function (req, res) {
+  try {
+    const employeeId = req.body.employeeId;
+    const filename = req.file?.filename;
+
+    if (!employeeId || !filename) {
+      return res.status(400).json({ status: false, message: "Employee ID and image file are required." });
+    }
+
+    const query = `
+      UPDATE "Entities".employees
+      SET "employeePic" = $1
+      WHERE "employeeId" = $2
+    `;
+    const values = [filename, employeeId];
+
+    pgPool.query(query, values, function (error, result) {
+      if (error) {
+        console.error("Database Error:", error);
+        return res.status(500).json({ status: false, message: "Database error while updating employee image." });
+      } else if (result.rowCount === 0) {
+        return res.status(404).json({ status: false, message: "Employee not found." });
+      } else {
+        return res.status(200).json({ status: true, message: "Employee image updated successfully!", filename });
+      }
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: "Server error while uploading employee image." });
+  }
+});
+
 router.post('/verify_employee_otp', async function (req, res) {
   const { email, otp } = req.body;
 

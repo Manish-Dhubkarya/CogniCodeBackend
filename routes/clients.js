@@ -189,6 +189,38 @@ router.post('/register_client', upload.single("clientPic"), async function (req,
   }
 });
 
+router.post('/upload_client_image', upload.single("pic"), async function (req, res) {
+  try {
+    const clientId = req.body.clientId;
+    const filename = req.file?.filename;
+
+    if (!clientId || !filename) {
+      return res.status(400).json({ status: false, message: "Client ID and image file are required." });
+    }
+
+    const query = `
+      UPDATE "Entities".clients
+      SET "clientPic" = $1
+      WHERE "clientId" = $2
+    `;
+    const values = [filename, clientId];
+
+    pgPool.query(query, values, function (error, result) {
+      if (error) {
+        console.error("Database Error:", error);
+        return res.status(500).json({ status: false, message: "Database error while updating client image." });
+      } else if (result.rowCount === 0) {
+        return res.status(404).json({ status: false, message: "Client not found." });
+      } else {
+        return res.status(200).json({ status: true, message: "Client image updated successfully!", filename });
+      }
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: "Server error while uploading client image." });
+  }
+});
+
 router.post('/verify_client_otp', async function (req, res) {
   const { email, otp } = req.body;
   if (!email || !otp) {

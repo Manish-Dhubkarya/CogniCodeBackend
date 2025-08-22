@@ -1,7 +1,7 @@
 var express = require('express');
 var router = express.Router();
 var pgPool = require("./PostgreSQLPool");
-
+var upload = require("./multer"); 
 router.post('/check_login_head', function (req, res) {
     console.log("LOGIN DATA RECEIVED:", req.body);
 
@@ -38,6 +38,38 @@ router.post('/check_login_head', function (req, res) {
         console.error("Server Error:", e);
         return res.status(500).json({ status: false, message: "Server Error...!" });
     }
+});
+router.post('/upload_head_image', upload.single("pic"), function (req, res) {
+  try {
+    const headId = req.body.headId;
+    const filename = req.file?.filename;
+
+    if (!headId || !filename) {
+        console.error("Missing headId or file:", req.body, req.file);
+      return res.status(400).json({ status: false, message: "Head ID and image file are required." });
+    }
+
+    const query = `
+      UPDATE "Entities".head
+      SET "headPic" = $1
+      WHERE "headId" = $2
+    `;
+    const values = [filename, headId];
+
+    pgPool.query(query, values, function (error, result) {
+      if (error) {
+        console.error("Database Error:", error);
+        return res.status(500).json({ status: false, message: "Database error while updating head image." });
+      } else if (result.rowCount === 0) {
+        return res.status(404).json({ status: false, message: "Head not found." });
+      } else {
+        return res.status(200).json({ status: true, message: "Head image updated successfully!", filename });
+      }
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: "Server error while uploading head image." });
+  }
 });
 
 module.exports = router;

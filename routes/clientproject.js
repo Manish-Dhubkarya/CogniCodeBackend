@@ -253,6 +253,9 @@ router.get('/show_all_clientsprojects', function (req, res) {
         cp.title,
         cp.deadline,
         cp.budget,
+        cp.description,
+        cp.clientchats,
+        cp.clientaudios,
         c."clientName"
       FROM projectschema.clientproject cp
       JOIN "Entities".clients c ON cp.clientid = c."clientId"
