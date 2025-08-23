@@ -9,33 +9,55 @@ initializeDatabase();
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/');
+    cb(null, 'Uploads/');
   },
   filename: function (req, file, cb) {
     cb(null, Date.now() + path.extname(file.originalname));
   }
 });
 
+// Initialize database with updated schema
+router.get('/init', function (req, res) {
+  const query = `
+    CREATE SCHEMA IF NOT EXISTS projectschema;
+    CREATE TABLE IF NOT EXISTS projectschema.clientproject (
+      project_id SERIAL PRIMARY KEY,
+      workstream VARCHAR(255),
+      title VARCHAR(255),
+      deadline DATE,
+      budget FLOAT,
+      description TEXT[],
+      clientid VARCHAR(255),
+      clientchats TEXT[] DEFAULT ARRAY[]::TEXT[],
+      clientaudios TEXT[] DEFAULT ARRAY[]::TEXT[],
+      headchats TEXT[] DEFAULT ARRAY[]::TEXT[],
+      headaudios TEXT[] DEFAULT ARRAY[]::TEXT[]
+    );
+  `;
+  pgPool.query(query, function (error, result) {
+    if (error) {
+      console.error("Database Initialization Error:", error);
+      return res.status(500).json({ status: false, message: "Database Initialization Failed." });
+    }
+    return res.status(200).json({ status: true, message: "Database Initialized Successfully!" });
+  });
+});
+
 // Save project
 router.post('/save_project', function (req, res) {
   console.log("RECEIVED PROJECT DATA:", req.body);
-
   try {
     const { workstream, title, deadline, budget, description, clientid } = req.body;
-
     if (!workstream || !title || !deadline || !budget || !description || !clientid) {
       return res.status(400).json({ status: false, message: "All fields are required." });
     }
-
     const query = `
       INSERT INTO projectschema.clientproject
-      (workstream, title, deadline, budget, description, clientid, clientchats, clientaudios)
-      VALUES ($1, $2, $3, $4, ARRAY[$5], $6, ARRAY[]::text[], ARRAY[]::text[])
+      (workstream, title, deadline, budget, description, clientid, clientchats, clientaudios, headchats, headaudios)
+      VALUES ($1, $2, $3, $4, ARRAY[$5], $6, ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[])
       RETURNING project_id
     `;
-
     const values = [workstream, title, deadline, parseFloat(budget), description, clientid];
-
     pgPool.query(query, values, function (error, result) {
       if (error) {
         console.error("Database Error:", error);
@@ -60,13 +82,11 @@ router.post('/save_project', function (req, res) {
 router.get('/get_project/:projectId', function (req, res) {
   const { projectId } = req.params;
   console.log("Project ID:", projectId);
-
   try {
     const query = `
       SELECT * FROM projectschema.clientproject
       WHERE project_id = $1
     `;
-
     pgPool.query(query, [projectId], function (error, result) {
       if (error) {
         console.error("Database Error:", error);
@@ -85,15 +105,13 @@ router.get('/get_project/:projectId', function (req, res) {
 
 // Update project
 router.post('/update_project/:projectId', function (req, res) {
-  console.log("REEEEEEEEEEEEEEEEEEEE",req.body)
+  console.log("UPDATE PROJECT:", req.body);
   const { projectId } = req.params;
   const { description: newDescription } = req.body;
-
   if (!newDescription || newDescription.trim() === '' || newDescription === '<p><br></p>') {
     console.error("Invalid description:", newDescription);
     return res.status(400).json({ status: false, message: "Valid description is required." });
   }
-
   try {
     const query = `
       UPDATE projectschema.clientproject
@@ -101,7 +119,6 @@ router.post('/update_project/:projectId', function (req, res) {
       WHERE project_id = $2
       RETURNING project_id, description
     `;
-
     pgPool.query(query, [newDescription, projectId], function (error, result) {
       if (error) {
         console.error("Database Error:", error);
@@ -123,17 +140,14 @@ router.post('/update_project/:projectId', function (req, res) {
   }
 });
 
-// Add chat to project
+// Add client chat to project
 router.post('/add_chat/:projectId', function (req, res) {
   const { projectId } = req.params;
-  const { type, data } = req.body;
-
-  if (!type || !data) {
-    return res.status(400).json({ status: false, message: "Type and data are required." });
+  const { type, data, timestamp } = req.body;
+  if (!type || !data || !timestamp) {
+    return res.status(400).json({ status: false, message: "Type, data, and timestamp are required." });
   }
-
-  const chatJson = JSON.stringify({ type, data });
-
+  const chatJson = JSON.stringify({ type, data, timestamp });
   try {
     const query = `
       UPDATE projectschema.clientproject
@@ -141,7 +155,6 @@ router.post('/add_chat/:projectId', function (req, res) {
       WHERE project_id = $2
       RETURNING project_id, clientchats
     `;
-
     pgPool.query(query, [chatJson, projectId], function (error, result) {
       if (error) {
         console.error("Database Error:", error);
@@ -162,17 +175,14 @@ router.post('/add_chat/:projectId', function (req, res) {
   }
 });
 
-// Add audio to project
+// Add client audio to project
 router.post('/add_audio/:projectId', function (req, res) {
   const { projectId } = req.params;
-  const { type, data } = req.body;
-
-  if (!type || !data) {
-    return res.status(400).json({ status: false, message: "Type and data are required." });
+  const { type, data, timestamp } = req.body;
+  if (!type || !data || !timestamp) {
+    return res.status(400).json({ status: false, message: "Type, data, and timestamp are required." });
   }
-
-  const audioJson = JSON.stringify({ type, data });
-
+  const audioJson = JSON.stringify({ type, data, timestamp });
   try {
     const query = `
       UPDATE projectschema.clientproject
@@ -180,7 +190,6 @@ router.post('/add_audio/:projectId', function (req, res) {
       WHERE project_id = $2
       RETURNING project_id, clientaudios
     `;
-
     pgPool.query(query, [audioJson, projectId], function (error, result) {
       if (error) {
         console.error("Database Error:", error);
@@ -201,17 +210,86 @@ router.post('/add_audio/:projectId', function (req, res) {
   }
 });
 
+// Add head chat to project
+router.post('/add_head_chat/:projectId', function (req, res) {
+  const { projectId } = req.params;
+  const { type, data, timestamp } = req.body;
+  if (!type || !data || !timestamp) {
+    return res.status(400).json({ status: false, message: "Type, data, and timestamp are required." });
+  }
+  const chatJson = JSON.stringify({ type, data, timestamp });
+  try {
+    const query = `
+      UPDATE projectschema.clientproject
+      SET headchats = array_append(headchats, $1)
+      WHERE project_id = $2
+      RETURNING project_id, headchats
+    `;
+    pgPool.query(query, [chatJson, projectId], function (error, result) {
+      if (error) {
+        console.error("Database Error:", error);
+        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+      } else if (result.rowCount === 0) {
+        return res.status(404).json({ status: false, message: "Project not found!!" });
+      } else {
+        return res.status(200).json({
+          status: true,
+          message: "Head chat added successfully!",
+          data: { project_id: result.rows[0].project_id }
+        });
+      }
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: "Server Error...!" });
+  }
+});
+
+// Add head audio to project
+router.post('/add_head_audio/:projectId', function (req, res) {
+  const { projectId } = req.params;
+  const { type, data, timestamp } = req.body;
+  if (!type || !data || !timestamp) {
+    return res.status(400).json({ status: false, message: "Type, data, and timestamp are required." });
+  }
+  const audioJson = JSON.stringify({ type, data, timestamp });
+  try {
+    const query = `
+      UPDATE projectschema.clientproject
+      SET headaudios = array_append(headaudios, $1)
+      WHERE project_id = $2
+      RETURNING project_id, headaudios
+    `;
+    pgPool.query(query, [audioJson, projectId], function (error, result) {
+      if (error) {
+        console.error("Database Error:", error);
+        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+      } else if (result.rowCount === 0) {
+        return res.status(404).json({ status: false, message: "Project not found!!" });
+      } else {
+        return res.status(200).json({
+          status: true,
+          message: "Head audio added successfully!",
+          data: { project_id: result.rows[0].project_id }
+        });
+      }
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: "Server Error...!" });
+  }
+});
+
 // Upload file
 router.post('/upload_file', upload.single('file'), function (req, res) {
-  console.log("Audio Fileeeeee!!!", req.body)
+  console.log("File Upload:", req.body);
   try {
     const file = req.file;
     if (!file) {
       return res.status(400).json({ status: false, message: "No file uploaded." });
     }
     const projectId = req.body.projectId;
-    // You can use projectId if needed, e.g., to organize files per project
-    const fileUrl = `/uploads/${file.filename}`; // Relative URL
+    const fileUrl = `/Uploads/${file.filename}`;
     return res.status(200).json({ status: true, data: { fileUrl } });
   } catch (e) {
     console.error("Upload Error:", e);
@@ -219,17 +297,16 @@ router.post('/upload_file', upload.single('file'), function (req, res) {
   }
 });
 
+// Get client projects
 router.get('/get_client_projects/:clientId', function (req, res) {
   const { clientId } = req.params;
   console.log("Client ID:", clientId);
-
   try {
     const query = `
       SELECT * FROM projectschema.clientproject
       WHERE clientid = $1
       ORDER BY deadline DESC
     `;
-
     pgPool.query(query, [clientId], function (error, result) {
       if (error) {
         console.error("Database Error:", error);
@@ -244,6 +321,7 @@ router.get('/get_client_projects/:clientId', function (req, res) {
   }
 });
 
+// Show all client projects
 router.get('/show_all_clientsprojects', function (req, res) {
   try {
     const query = `
@@ -256,12 +334,14 @@ router.get('/show_all_clientsprojects', function (req, res) {
         cp.description,
         cp.clientchats,
         cp.clientaudios,
-        c."clientName"
+        cp.headchats,
+        cp.headaudios,
+        c."clientName",
+        c."clientPic"
       FROM projectschema.clientproject cp
       JOIN "Entities".clients c ON cp.clientid = c."clientId"
       ORDER BY cp.deadline ASC
     `;
-
     pgPool.query(query, [], function (error, result) {
       if (error) {
         console.error("Database Error:", error);
@@ -275,6 +355,5 @@ router.get('/show_all_clientsprojects', function (req, res) {
     return res.status(500).json({ status: false, message: "Server Error...!" });
   }
 });
-
 
 module.exports = router;
