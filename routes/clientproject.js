@@ -84,8 +84,13 @@ router.get('/get_project/:projectId', function (req, res) {
   console.log("Project ID:", projectId);
   try {
     const query = `
-      SELECT * FROM projectschema.clientproject
-      WHERE project_id = $1
+       SELECT 
+        cp.*, 
+        h."headPic"
+      FROM projectschema.clientproject cp
+      LEFT JOIN "Entities".head h 
+        ON cp.headid = h."headId"
+      WHERE cp.project_id = $1
     `;
     pgPool.query(query, [projectId], function (error, result) {
       if (error) {
@@ -213,19 +218,29 @@ router.post('/add_audio/:projectId', function (req, res) {
 // Add head chat to project
 router.post('/add_head_chat/:projectId', function (req, res) {
   const { projectId } = req.params;
-  const { type, data, timestamp } = req.body;
+  const { type, data, timestamp, headid } = req.body; // Assume headid is sent in the request body
+
+  // Validate required fields
   if (!type || !data || !timestamp) {
     return res.status(400).json({ status: false, message: "Type, data, and timestamp are required." });
   }
+
+  // Optional: Validate headid if required
+  if (!headid) {
+    return res.status(400).json({ status: false, message: "Head ID is required." });
+  }
+
   const chatJson = JSON.stringify({ type, data, timestamp });
+
   try {
     const query = `
       UPDATE projectschema.clientproject
-      SET headchats = array_append(headchats, $1)
+      SET headchats = array_append(headchats, $1),
+      headid = $3
       WHERE project_id = $2
-      RETURNING project_id, headchats
+      RETURNING project_id, headchats, headid
     `;
-    pgPool.query(query, [chatJson, projectId], function (error, result) {
+    pgPool.query(query, [chatJson, projectId, headid], function (error, result) {
       if (error) {
         console.error("Database Error:", error);
         return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
@@ -234,8 +249,11 @@ router.post('/add_head_chat/:projectId', function (req, res) {
       } else {
         return res.status(200).json({
           status: true,
-          message: "Head chat added successfully!",
-          data: { project_id: result.rows[0].project_id }
+          message: "Head chat added and head ID updated successfully!",
+          data: { 
+            project_id: result.rows[0].project_id,
+            headid: result.rows[0].headid
+          }
         });
       }
     });
@@ -337,7 +355,7 @@ router.get('/show_all_clientsprojects', function (req, res) {
         cp.headchats,
         cp.headaudios,
         c."clientName",
-        c."clientPic"
+        c."clientPic",
       FROM projectschema.clientproject cp
       JOIN "Entities".clients c ON cp.clientid = c."clientId"
       ORDER BY cp.deadline ASC
