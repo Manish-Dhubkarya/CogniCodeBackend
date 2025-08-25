@@ -355,7 +355,7 @@ router.get('/show_all_clientsprojects', function (req, res) {
         cp.headchats,
         cp.headaudios,
         c."clientName",
-        c."clientPic",
+        c."clientPic"
       FROM projectschema.clientproject cp
       JOIN "Entities".clients c ON cp.clientid = c."clientId"
       ORDER BY cp.deadline ASC
