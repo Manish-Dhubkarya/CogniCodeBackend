@@ -9,7 +9,7 @@ initializeDatabase();
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'Uploads/');
+    cb(null, 'images/');
   },
   filename: function (req, file, cb) {
     cb(null, Date.now() + path.extname(file.originalname));
@@ -307,7 +307,7 @@ router.post('/upload_file', upload.single('file'), function (req, res) {
       return res.status(400).json({ status: false, message: "No file uploaded." });
     }
     const projectId = req.body.projectId;
-    const fileUrl = `/Uploads/${file.filename}`;
+    const fileUrl = `/images/${file.filename}`;
     return res.status(200).json({ status: true, data: { fileUrl } });
   } catch (e) {
     console.error("Upload Error:", e);
