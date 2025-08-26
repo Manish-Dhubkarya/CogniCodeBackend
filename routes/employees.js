@@ -43,7 +43,6 @@ router.post('/register_employee', upload.single("employeePic"), async function (
       return res.status(429).json({ status: false, message: "Please wait 30 seconds before resending OTP." });
     }
 
-    // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     // Store pending data with timestamp
