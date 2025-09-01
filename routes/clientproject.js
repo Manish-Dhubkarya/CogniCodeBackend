@@ -374,4 +374,69 @@ router.get('/show_all_clientsprojects', function (req, res) {
   }
 });
 
+// Assuming your backend is using Express.js and PostgreSQL (as per previous examples)
+// Add this endpoint to your server file (e.g., app.js or routes/clientproject.js)
+
+router.post('/mark_message_seen/:projectId', async (req, res) => {
+  const { projectId } = req.params;
+  const { index, fromClient, type } = req.body; // Expect index (msg.id), fromClient (boolean), type ('chat' or 'audio')
+
+  if (typeof index !== 'number' || index < 0 || typeof fromClient !== 'boolean' || !['chat', 'audio'].includes(type)) {
+    return res.status(400).json({ status: false, message: 'Invalid request parameters' });
+  }
+
+  try {
+    // Determine the correct array field based on fromClient and type
+    let field;
+    if (fromClient) {
+      field = type === 'audio' ? 'clientaudios' : 'clientchats';
+    } else {
+      field = type === 'audio' ? 'headaudios' : 'headchats';
+    }
+
+    // Fetch the current array
+    const result = await pgPool.query(
+      `SELECT ${field} FROM projectschema.clientproject WHERE project_id = $1`,
+      [projectId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ status: false, message: 'Project not found' });
+    }
+
+    const messages = result.rows[0][field] || [];
+
+    if (index >= messages.length) {
+      return res.status(400).json({ status: false, message: 'Invalid message index' });
+    }
+
+    // Parse the message JSON, set seen to true, and stringify back
+    let msgObj;
+    try {
+      msgObj = JSON.parse(messages[index]);
+    } catch (parseError) {
+      console.error('Error parsing message JSON:', parseError);
+      return res.status(500).json({ status: false, message: 'Invalid message format' });
+    }
+
+    if (msgObj.seen === true) {
+      return res.status(200).json({ status: true, message: 'Message already seen' });
+    }
+
+    msgObj.seen = true;
+    messages[index] = JSON.stringify(msgObj);
+
+    // Update the array in the database
+    await pgPool.query(
+      `UPDATE projectschema.clientproject SET ${field} = $1 WHERE project_id = $2`,
+      [messages, projectId]
+    );
+
+    return res.status(200).json({ status: true, message: 'Message marked as seen' });
+  } catch (error) {
+    console.error('Error marking message as seen:', error);
+    return res.status(500).json({ status: false, message: 'Internal server error' });
+  }
+});
+
 module.exports = router;
