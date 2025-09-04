@@ -15,6 +15,7 @@ var employeesRouter=require('./routes/employees')
 var clientsRouter=require('./routes/clients')
 var headRouter=require('./routes/head')
 var clientProjectRouter=require('./routes/clientproject')
+var teamLeaderRouter=require('./routes/teamleader')
 
 var app = express();
 app.set('views', path.join(__dirname, 'views'));
@@ -36,6 +37,7 @@ app.use('/employees', employeesRouter);
 app.use('/clients', clientsRouter);
 app.use('/head', headRouter);
 app.use('/clientproject', clientProjectRouter);
+app.use('/teamleader', teamLeaderRouter);
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
