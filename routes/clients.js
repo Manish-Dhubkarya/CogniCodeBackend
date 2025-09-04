@@ -148,8 +148,35 @@ router.post('/register_client', upload.single("clientPic"), async function (req,
 
   try {
     const email = req.body.clientMail;
+    const clientSecurityKey = req.body.clientSecurityKey;
+
     if (!email) {
       return res.status(400).json({ status: false, message: "Email is required." });
+    }
+
+    if (!clientSecurityKey || clientSecurityKey.trim() === "") {
+      return res.status(400).json({ status: false, message: "Security Key is required for Client." });
+    }
+
+    // Validate security key and email for Client
+    const query = `
+      SELECT key_id FROM "Entities"."ClientSecureKey"
+      WHERE key_id = $1 AND email = $2
+    `;
+    const result = await pgPool.query(query, [clientSecurityKey.trim(), email]);
+    console.log(`Client Security Key and Email Query Result: ${JSON.stringify(result.rows)}`);
+    if (result.rows.length === 0) {
+      return res.status(400).json({ status: false, message: "Invalid Security Key or Email for Client." });
+    }
+
+    // Check if security key is already used
+    const keyUsedQuery = `
+      SELECT "clientSecurityKey" FROM "Entities".clients
+      WHERE "clientSecurityKey" = $1
+    `;
+    const keyUsedResult = await pgPool.query(keyUsedQuery, [clientSecurityKey.trim()]);
+    if (keyUsedResult.rows.length > 0) {
+      return res.status(400).json({ status: false, message: "Security Key has already been used for registration." });
     }
 
     // Rate limit OTP resends (30 seconds)
