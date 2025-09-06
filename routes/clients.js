@@ -142,7 +142,6 @@ router.post('/delete_client', async function (req, res) {
   }
 });
 
-
 router.post('/register_client', upload.single("clientPic"), async function (req, res) {
   console.log("RECEIVED DATA:", req.body);
 
@@ -156,6 +155,16 @@ router.post('/register_client', upload.single("clientPic"), async function (req,
 
     if (!clientSecurityKey || clientSecurityKey.trim() === "") {
       return res.status(400).json({ status: false, message: "Security Key is required for Client." });
+    }
+
+    // Check if email already exists in clients table
+    const emailCheckQuery = `
+      SELECT "clientMail" FROM "Entities".clients
+      WHERE "clientMail" = $1
+    `;
+    const emailCheckResult = await pgPool.query(emailCheckQuery, [email]);
+    if (emailCheckResult.rows.length > 0) {
+      return res.status(400).json({ status: false, message: "Email is already registered." });
     }
 
     // Validate security key and email for Client

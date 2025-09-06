@@ -1,50 +1,138 @@
-var express = require('express');
+var express = require("express");
 var router = express.Router();
-var pgPool = require('./PostgreSQLPool');
-var initializeDatabase = require('./init');
-var multer = require('multer');
-var path = require('path');
+var pgPool = require("./PostgreSQLPool");
+var initializeDatabase = require("./init");
+var multer = require("multer");
+var path = require("path");
 var upload = require("./multer");
 initializeDatabase();
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'images/');
+    cb(null, "images/");
   },
   filename: function (req, file, cb) {
     cb(null, Date.now() + path.extname(file.originalname));
-  }
+  },
 });
 
 // Initialize database with updated schema
-router.get('/init', function (req, res) {
+router.get("/init", function (req, res) {
   const query = `
     CREATE SCHEMA IF NOT EXISTS projectschema;
-    CREATE TABLE IF NOT EXISTS projectschema.clientproject (
-      project_id SERIAL PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS projectschema."employeeRequests" (
+      request_id SERIAL PRIMARY KEY,
+      project_id INTEGER,
+      employeeId INTEGER,
       workstream VARCHAR(255),
       title VARCHAR(255),
+      clientName VARCHAR(255),
       deadline DATE,
-      budget FLOAT,
-      description TEXT[],
-      clientid VARCHAR(255),
-      clientchats TEXT[] DEFAULT ARRAY[]::TEXT[],
-      clientaudios TEXT[] DEFAULT ARRAY[]::TEXT[],
-      headchats TEXT[] DEFAULT ARRAY[]::TEXT[],
-      headaudios TEXT[] DEFAULT ARRAY[]::TEXT[]
+      description TEXT,
+      status VARCHAR(50) DEFAULT 'pending',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
   `;
   pgPool.query(query, function (error, result) {
     if (error) {
       console.error("Database Initialization Error:", error);
-      return res.status(500).json({ status: false, message: "Database Initialization Failed." });
+      return res
+        .status(500)
+        .json({ status: false, message: `Database Initialization Failed: ${error.message}` });
     }
-    return res.status(200).json({ status: true, message: "Database Initialized Successfully!" });
+    return res
+      .status(200)
+      .json({ status: true, message: "Database Initialized Successfully!" });
   });
 });
 
+// Submit a request to employeeRequests
+router.post("/submit_request", async function (req, res) {
+  console.log("RECEIVED REQUEST DATA:", req.body);
+  try {
+    const { project_id, employeeId, workstream, title, clientName, deadline, description, status } = req.body;
+    if (!project_id || !employeeId || !workstream || !title || !clientName || !deadline || !description) {
+      return res.status(400).json({ status: false, message: "All fields are required." });
+    }
+
+    // Validate project_id exists (application-level check)
+    const projectCheck = await pgPool.query(
+      "SELECT project_id FROM projectschema.clientproject WHERE project_id = $1",
+      [project_id]
+    );
+    if (projectCheck.rows.length === 0) {
+      return res.status(404).json({ status: false, message: "Project not found." });
+    }
+
+    // Validate employeeId exists and is an integer
+    const employeeCheck = await pgPool.query(
+      'SELECT "employeeId" FROM "Entities".employees WHERE "employeeId" = CAST($1 AS INTEGER)',
+      [employeeId]
+    );
+    if (employeeCheck.rows.length === 0) {
+      return res.status(404).json({ status: false, message: "Employee not found." });
+    }
+
+    const query = `
+      INSERT INTO projectschema."employeeRequests"
+      (project_id, employeeId, workstream, title, clientName, deadline, description, status)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING request_id, project_id, employeeId, workstream, title, clientName, deadline, description, status
+    `;
+    const values = [
+      project_id,
+      employeeId,
+      workstream,
+      title,
+      clientName,
+      deadline,
+      description,
+      status || "pending",
+    ];
+    const result = await pgPool.query(query, values);
+    return res.status(200).json({
+      status: true,
+      message: "Request submitted successfully!",
+      data: result.rows[0],
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: `Server Error: ${e.message}` });
+  }
+});
+
+// Get all employeeRequests for Team Leader
+router.get("/employee_requests", async function (req, res) {
+  try {
+    const query = `
+      SELECT 
+        er.request_id,
+        er.project_id::TEXT,
+        er.employeeId,
+        er.workstream,
+        er.title,
+        er.clientName,
+        er.deadline::TEXT,
+        er.description,
+        er.status,
+        er.created_at
+      FROM projectschema."employeeRequests" er
+      ORDER BY er.created_at DESC
+    `;
+    const result = await pgPool.query(query);
+    return res.status(200).json({
+      status: true,
+      message: "Employee requests retrieved successfully!",
+      data: result.rows,
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: `Server Error: ${e.message}` });
+  }
+});
+
 // Save project
-router.post('/save_project', function (req, res) {
+router.post("/save_project", function (req, res) {
   console.log("RECEIVED PROJECT DATA:", req.body);
   try {
     const { workstream, title, deadline, budget, description, clientid } = req.body;
@@ -61,14 +149,16 @@ router.post('/save_project', function (req, res) {
     pgPool.query(query, values, function (error, result) {
       if (error) {
         console.error("Database Error:", error);
-        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+        return res
+          .status(400)
+          .json({ status: false, message: "Database Error, Please contact the admin." });
       } else {
         const projectId = result.rows[0].project_id;
         console.log("PROJECT ID:", projectId);
         return res.status(200).json({
           status: true,
           message: "Project details saved successfully!",
-          data: { project_id: projectId }
+          data: { project_id: projectId },
         });
       }
     });
@@ -79,12 +169,12 @@ router.post('/save_project', function (req, res) {
 });
 
 // Get project by ID
-router.get('/get_project/:projectId', function (req, res) {
+router.get("/get_project/:projectId", function (req, res) {
   const { projectId } = req.params;
   console.log("Project ID:", projectId);
   try {
     const query = `
-       SELECT 
+      SELECT 
         cp.*, 
         h."headPic"
       FROM projectschema.clientproject cp
@@ -95,11 +185,17 @@ router.get('/get_project/:projectId', function (req, res) {
     pgPool.query(query, [projectId], function (error, result) {
       if (error) {
         console.error("Database Error:", error);
-        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+        return res
+          .status(400)
+          .json({ status: false, message: "Database Error, Please contact the admin." });
       } else if (result.rows.length === 0) {
         return res.status(404).json({ status: false, message: "Project not found!!" });
       } else {
-        return res.status(200).json({ status: true, message: "Project details retrieved successfully!", data: result.rows[0] });
+        return res.status(200).json({
+          status: true,
+          message: "Project details retrieved successfully!",
+          data: result.rows[0],
+        });
       }
     });
   } catch (e) {
@@ -109,11 +205,11 @@ router.get('/get_project/:projectId', function (req, res) {
 });
 
 // Update project
-router.post('/update_project/:projectId', function (req, res) {
+router.post("/update_project/:projectId", function (req, res) {
   console.log("UPDATE PROJECT:", req.body);
   const { projectId } = req.params;
   const { description: newDescription } = req.body;
-  if (!newDescription || newDescription.trim() === '' || newDescription === '<p><br></p>') {
+  if (!newDescription || newDescription.trim() === "" || newDescription === "<p><br></p>") {
     console.error("Invalid description:", newDescription);
     return res.status(400).json({ status: false, message: "Valid description is required." });
   }
@@ -127,7 +223,9 @@ router.post('/update_project/:projectId', function (req, res) {
     pgPool.query(query, [newDescription, projectId], function (error, result) {
       if (error) {
         console.error("Database Error:", error);
-        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+        return res
+          .status(400)
+          .json({ status: false, message: "Database Error, Please contact the admin." });
       } else if (result.rowCount === 0) {
         return res.status(404).json({ status: false, message: "Project not found!!" });
       } else {
@@ -135,7 +233,7 @@ router.post('/update_project/:projectId', function (req, res) {
         return res.status(200).json({
           status: true,
           message: "Project updated successfully!",
-          data: { project_id: result.rows[0].project_id, description: result.rows[0].description }
+          data: { project_id: result.rows[0].project_id, description: result.rows[0].description },
         });
       }
     });
@@ -146,7 +244,7 @@ router.post('/update_project/:projectId', function (req, res) {
 });
 
 // Add client chat to project
-router.post('/add_chat/:projectId', function (req, res) {
+router.post("/add_chat/:projectId", function (req, res) {
   const { projectId } = req.params;
   const { type, data, timestamp } = req.body;
   if (!type || !data || !timestamp) {
@@ -163,14 +261,16 @@ router.post('/add_chat/:projectId', function (req, res) {
     pgPool.query(query, [chatJson, projectId], function (error, result) {
       if (error) {
         console.error("Database Error:", error);
-        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+        return res
+          .status(400)
+          .json({ status: false, message: "Database Error, Please contact the admin." });
       } else if (result.rowCount === 0) {
         return res.status(404).json({ status: false, message: "Project not found!!" });
       } else {
         return res.status(200).json({
           status: true,
           message: "Chat added successfully!",
-          data: { project_id: result.rows[0].project_id }
+          data: { project_id: result.rows[0].project_id },
         });
       }
     });
@@ -181,7 +281,7 @@ router.post('/add_chat/:projectId', function (req, res) {
 });
 
 // Add client audio to project
-router.post('/add_audio/:projectId', function (req, res) {
+router.post("/add_audio/:projectId", function (req, res) {
   const { projectId } = req.params;
   const { type, data, timestamp } = req.body;
   if (!type || !data || !timestamp) {
@@ -198,14 +298,16 @@ router.post('/add_audio/:projectId', function (req, res) {
     pgPool.query(query, [audioJson, projectId], function (error, result) {
       if (error) {
         console.error("Database Error:", error);
-        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+        return res
+          .status(400)
+          .json({ status: false, message: "Database Error, Please contact the admin." });
       } else if (result.rowCount === 0) {
         return res.status(404).json({ status: false, message: "Project not found!!" });
       } else {
         return res.status(200).json({
           status: true,
           message: "Audio added successfully!",
-          data: { project_id: result.rows[0].project_id }
+          data: { project_id: result.rows[0].project_id },
         });
       }
     });
@@ -216,13 +318,15 @@ router.post('/add_audio/:projectId', function (req, res) {
 });
 
 // Add head chat to project
-router.post('/add_head_chat/:projectId', function (req, res) {
+router.post("/add_head_chat/:projectId", function (req, res) {
   const { projectId } = req.params;
   const { type, data, timestamp, headid } = req.body; // Assume headid is sent in the request body
 
   // Validate required fields
   if (!type || !data || !timestamp) {
-    return res.status(400).json({ status: false, message: "Type, data, and timestamp are required." });
+    return res
+      .status(400)
+      .json({ status: false, message: "Type, data, and timestamp are required." });
   }
 
   // Optional: Validate headid if required
@@ -243,17 +347,19 @@ router.post('/add_head_chat/:projectId', function (req, res) {
     pgPool.query(query, [chatJson, projectId, headid], function (error, result) {
       if (error) {
         console.error("Database Error:", error);
-        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+        return res
+          .status(400)
+          .json({ status: false, message: "Database Error, Please contact the admin." });
       } else if (result.rowCount === 0) {
         return res.status(404).json({ status: false, message: "Project not found!!" });
       } else {
         return res.status(200).json({
           status: true,
           message: "Head chat added and head ID updated successfully!",
-          data: { 
+          data: {
             project_id: result.rows[0].project_id,
-            headid: result.rows[0].headid
-          }
+            headid: result.rows[0].headid,
+          },
         });
       }
     });
@@ -264,11 +370,13 @@ router.post('/add_head_chat/:projectId', function (req, res) {
 });
 
 // Add head audio to project
-router.post('/add_head_audio/:projectId', function (req, res) {
+router.post("/add_head_audio/:projectId", function (req, res) {
   const { projectId } = req.params;
   const { type, data, timestamp } = req.body;
   if (!type || !data || !timestamp) {
-    return res.status(400).json({ status: false, message: "Type, data, and timestamp are required." });
+    return res
+      .status(400)
+      .json({ status: false, message: "Type, data, and timestamp are required." });
   }
   const audioJson = JSON.stringify({ type, data, timestamp });
   try {
@@ -281,14 +389,16 @@ router.post('/add_head_audio/:projectId', function (req, res) {
     pgPool.query(query, [audioJson, projectId], function (error, result) {
       if (error) {
         console.error("Database Error:", error);
-        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+        return res
+          .status(400)
+          .json({ status: false, message: "Database Error, Please contact the admin." });
       } else if (result.rowCount === 0) {
         return res.status(404).json({ status: false, message: "Project not found!!" });
       } else {
         return res.status(200).json({
           status: true,
           message: "Head audio added successfully!",
-          data: { project_id: result.rows[0].project_id }
+          data: { project_id: result.rows[0].project_id },
         });
       }
     });
@@ -299,7 +409,7 @@ router.post('/add_head_audio/:projectId', function (req, res) {
 });
 
 // Upload file
-router.post('/upload_file', upload.single('file'), function (req, res) {
+router.post("/upload_file", upload.single("file"), function (req, res) {
   console.log("File Upload:", req.body);
   try {
     const file = req.file;
@@ -316,7 +426,7 @@ router.post('/upload_file', upload.single('file'), function (req, res) {
 });
 
 // Get client projects
-router.get('/get_client_projects/:clientId', function (req, res) {
+router.get("/get_client_projects/:clientId", function (req, res) {
   const { clientId } = req.params;
   console.log("Client ID:", clientId);
   try {
@@ -328,9 +438,15 @@ router.get('/get_client_projects/:clientId', function (req, res) {
     pgPool.query(query, [clientId], function (error, result) {
       if (error) {
         console.error("Database Error:", error);
-        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+        return res
+          .status(400)
+          .json({ status: false, message: "Database Error, Please contact the admin." });
       } else {
-        return res.status(200).json({ status: true, message: "Projects retrieved successfully!", data: result.rows });
+        return res.status(200).json({
+          status: true,
+          message: "Projects retrieved successfully!",
+          data: result.rows,
+        });
       }
     });
   } catch (e) {
@@ -340,7 +456,7 @@ router.get('/get_client_projects/:clientId', function (req, res) {
 });
 
 // Show all client projects
-router.get('/show_all_clientsprojects', function (req, res) {
+router.get("/show_all_clientsprojects", function (req, res) {
   try {
     const query = `
       SELECT 
@@ -363,9 +479,15 @@ router.get('/show_all_clientsprojects', function (req, res) {
     pgPool.query(query, [], function (error, result) {
       if (error) {
         console.error("Database Error:", error);
-        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+        return res
+          .status(400)
+          .json({ status: false, message: "Database Error, Please contact the admin." });
       } else {
-        return res.status(200).json({ status: true, message: "All client projects retrieved successfully!", data: result.rows });
+        return res.status(200).json({
+          status: true,
+          message: "All client projects retrieved successfully!",
+          data: result.rows,
+        });
       }
     });
   } catch (e) {
@@ -374,68 +496,67 @@ router.get('/show_all_clientsprojects', function (req, res) {
   }
 });
 
-// Assuming your backend is using Express.js and PostgreSQL (as per previous examples)
-// Add this endpoint to your server file (e.g., app.js or routes/clientproject.js)
-
-router.post('/mark_message_seen/:projectId', async (req, res) => {
+// Mark message as seen
+router.post("/mark_message_seen/:projectId", async (req, res) => {
   const { projectId } = req.params;
   const { index, fromClient, type } = req.body; // Expect index (msg.id), fromClient (boolean), type ('chat' or 'audio')
 
-  if (typeof index !== 'number' || index < 0 || typeof fromClient !== 'boolean' || !['chat', 'audio'].includes(type)) {
-    return res.status(400).json({ status: false, message: 'Invalid request parameters' });
+  if (
+    typeof index !== "number" ||
+    index < 0 ||
+    typeof fromClient !== "boolean" ||
+    !["chat", "audio"].includes(type)
+  ) {
+    return res.status(400).json({ status: false, message: "Invalid request parameters" });
   }
 
   try {
-    // Determine the correct array field based on fromClient and type
     let field;
     if (fromClient) {
-      field = type === 'audio' ? 'clientaudios' : 'clientchats';
+      field = type === "audio" ? "clientaudios" : "clientchats";
     } else {
-      field = type === 'audio' ? 'headaudios' : 'headchats';
+      field = type === "audio" ? "headaudios" : "headchats";
     }
 
-    // Fetch the current array
     const result = await pgPool.query(
       `SELECT ${field} FROM projectschema.clientproject WHERE project_id = $1`,
       [projectId]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ status: false, message: 'Project not found' });
+      return res.status(404).json({ status: false, message: "Project not found" });
     }
 
     const messages = result.rows[0][field] || [];
 
     if (index >= messages.length) {
-      return res.status(400).json({ status: false, message: 'Invalid message index' });
+      return res.status(400).json({ status: false, message: "Invalid message index" });
     }
 
-    // Parse the message JSON, set seen to true, and stringify back
     let msgObj;
     try {
       msgObj = JSON.parse(messages[index]);
     } catch (parseError) {
-      console.error('Error parsing message JSON:', parseError);
-      return res.status(500).json({ status: false, message: 'Invalid message format' });
+      console.error("Error parsing message JSON:", parseError);
+      return res.status(500).json({ status: false, message: "Invalid message format" });
     }
 
     if (msgObj.seen === true) {
-      return res.status(200).json({ status: true, message: 'Message already seen' });
+      return res.status(200).json({ status: true, message: "Message already seen" });
     }
 
     msgObj.seen = true;
     messages[index] = JSON.stringify(msgObj);
 
-    // Update the array in the database
     await pgPool.query(
       `UPDATE projectschema.clientproject SET ${field} = $1 WHERE project_id = $2`,
       [messages, projectId]
     );
 
-    return res.status(200).json({ status: true, message: 'Message marked as seen' });
+    return res.status(200).json({ status: true, message: "Message marked as seen" });
   } catch (error) {
-    console.error('Error marking message as seen:', error);
-    return res.status(500).json({ status: false, message: 'Internal server error' });
+    console.error("Error marking message as seen:", error);
+    return res.status(500).json({ status: false, message: "Internal server error" });
   }
 });
 
