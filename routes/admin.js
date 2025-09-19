@@ -12,6 +12,7 @@ router.post('/submit_admin', upload.single("adminPic"), function (req, res, next
                return res.status(400).json({ status: false, message: "DataBase Error, Plz Contact DataBase Admin" })
             }
             else {
+              
                return res.status(200).json({ status: true, message: "Conference Submitted Successfully!" })
             }
         })
