@@ -131,6 +131,4 @@ const initializeDatabase2 = async () => {
   }
 };
 
-
-
 module.exports = {initializeDatabase1, initializeDatabase2};

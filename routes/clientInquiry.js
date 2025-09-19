@@ -21,4 +21,5 @@ router.post('/submit_client_inquiry', function (req, res, next) {
 
     }
 });
+
 module.exports=router;

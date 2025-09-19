@@ -14,7 +14,6 @@ router.post('/check_login_head', function (req, res) {
         if (!name || !password || !securityKey) {
             return res.status(400).json({ status: false, message: "Name/Email, Password, and Security Key are required." });
         }
-
         const query = `
             SELECT * FROM "Entities".head
             WHERE "headName" = $1

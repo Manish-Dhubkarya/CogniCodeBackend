@@ -15,7 +15,6 @@ router.post('/save_teamleader_key', async function (req, res) {
       console.log("hhhh", req.body);
       return res.status(400).json({ status: false, message: "key_id, name, email, and mobile are required." });
     }
-
     // Insert data
     const insertQuery = `
       INSERT INTO "Entities"."TeamLeaderSecureKey" ("key_id", "name", "email", "mobile")

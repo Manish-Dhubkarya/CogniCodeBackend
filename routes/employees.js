@@ -29,7 +29,7 @@ transporter.verify((error, success) => {
 
 // Register Employee or Team Leader
 router.post('/register_employee', upload.single("employeePic"), async function (req, res) {
-  console.log("RECEIVED DATA:", req.body);
+  // console.log("RECEIVED DATA:", req.body);
 
   try {
     const { employeeMail, role, securityKey, employeeName, employmentID, gender, employeeDesignation, password } = req.body;

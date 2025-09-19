@@ -4,7 +4,7 @@ var pool = require("./pool")
 // var upload = require("./multer");
 
 router.post('/submit_conference', function (req, res, next) {
-    console.log("REQQQQQQQQQQQQQQQQQ",req)
+    // console.log("REQQQQQQQQQQQQQQQQQ",req)
     try {
         pool.query("insert into conferences (publisher, conferenceName, area, subject, lastDOfSub, registrationCharges, links) values(?,?,?,?,?,?,?)", [req.body.publisher, req.body.conferenceName, req.body.area, req.body.subject, req.body.lastDOfSub, req.body.registrationCharges, req.body.links], function (error, result) {            
             if (error) {

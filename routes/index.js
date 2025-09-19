@@ -6,5 +6,4 @@ router.get('/index', function(req, res, next) {
   res.render('index', { title: 'CogniCode' });
 });
 
-
 module.exports = router;

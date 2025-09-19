@@ -78,4 +78,5 @@ router.get("/display_all_publications", function(req, res, next){
       return  res.status(500).json({ status: false, message: "Server Error...!" })
     }
 })
+
 module.exports = router;

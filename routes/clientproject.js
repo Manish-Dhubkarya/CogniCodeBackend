@@ -691,29 +691,94 @@ router.post("/upload_file", upload.single("file"), function (req, res) {
 router.get("/get_client_projects/:clientId", function (req, res) {
   const { clientId } = req.params;
   console.log("Client ID:", clientId);
+
+  // Input validation
+  if (!clientId || isNaN(clientId)) {
+    return res.status(400).json({
+      status: false,
+      message: "Invalid or missing clientId",
+    });
+  }
+
   try {
     const query = `
-      SELECT * FROM projectschema.clientproject
-      WHERE clientid = $1
+      SELECT 
+        cp.*, 
+        c."clientName",
+        c."clientPic",
+        h."headName" as headname,
+        h."headPic",
+        e."employeeName" AS "teamleadername",
+        e."employeePic" AS "teamleaderpic"
+      FROM projectschema.clientproject cp
+      LEFT JOIN "Entities".clients c ON cp.clientid = c."clientId"
+      LEFT JOIN "Entities".head h ON cp.headid = h."headId"
+      LEFT JOIN "Entities".employees e ON cp.teamleaderid = e."employeeId" AND e."role" = 'Team Leader'
+      WHERE cp.clientid = $1
       ORDER BY deadline DESC
     `;
-    pgPool.query(query, [clientId], function (error, result) {
+    pgPool.query(query, [clientId], async function (error, result) {
       if (error) {
         console.error("Database Error:", error);
-        return res
-          .status(400)
-          .json({ status: false, message: "Database Error, Please contact the admin." });
-      } else {
+        return res.status(400).json({
+          status: false,
+          message: "Database Error, Please contact the admin.",
+        });
+      }
+
+      try {
+        const projects = result.rows.map((p) => {
+          let unread_count = 0;
+          let has_unread_mention = false;
+
+          // Combine all messages from Head only
+          const receivedMessages = [
+            ...(p.headchats || []),
+            ...(p.headaudios || []),
+          ];
+
+          // Process each message to count unread and check for mentions
+          receivedMessages.forEach((msg_str) => {
+            try {
+              const msg = JSON.parse(msg_str);
+              if (!msg.seen) {
+                unread_count++;
+                if (msg.mention && msg.mention.type === "client" && msg.mention.id === clientId) {
+                  has_unread_mention = true;
+                }
+              }
+            } catch (e) {
+              console.error(`Error parsing message for project ${p.project_id}:`, e);
+            }
+          });
+
+          return {
+            ...p,
+            unread_count,
+            has_unread_mention,
+            headname: p.headname || "Head", // Fallback if headname is missing
+          };
+        });
+
         return res.status(200).json({
           status: true,
           message: "Projects retrieved successfully!",
-          data: result.rows,
+          data: projects,
+        });
+      } catch (e) {
+        console.error("Error processing project data:", e);
+        return res.status(500).json({
+          status: false,
+          message: "Error processing project data",
         });
       }
     });
   } catch (e) {
     console.error("Server Error:", e);
-    return res.status(500).json({ status: false, message: "Server Error...!" });
+    return res.status(500).json({
+      status: false,
+      message: "Server Error...!",
+    });
   }
 });
 

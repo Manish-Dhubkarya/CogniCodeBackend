@@ -19,7 +19,6 @@ router.post('/submit_admin', upload.single("adminPic"), function (req, res, next
     }
     catch (e) {
       return  res.status(500).json({ status: false, message: "Server Error...!" })
-
     }
 });
 
