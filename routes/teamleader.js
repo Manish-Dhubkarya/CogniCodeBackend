@@ -10,28 +10,6 @@ router.post('/save_teamleader_key', async function (req, res) {
   const { key_id, name, email, mobile } = req.body;
 
   try {
-    // Check and create table if it doesn't exist
-    const checkTableQuery = `
-      SELECT EXISTS (
-        SELECT FROM pg_tables
-        WHERE schemaname = 'Entities' AND tablename = 'TeamLeaderSecureKey'
-      );
-    `;
-    const tableCheckResult = await pgPool.query(checkTableQuery);
-    if (!tableCheckResult.rows[0].exists) {
-      const createTableQuery = `
-        CREATE TABLE "Entities"."TeamLeaderSecureKey" (
-          "key_id" VARCHAR(100) NOT NULL,
-          "name" VARCHAR(100) NOT NULL,
-          "email" VARCHAR(150) NOT NULL,
-          "mobile" VARCHAR(15) NOT NULL,
-          PRIMARY KEY ("key_id")
-        );
-      `;
-      await pgPool.query(createTableQuery);
-      console.log("Table 'TeamLeaderSecureKey' created successfully.");
-    }
-
     // Validate input
     if (!key_id || !name || !email || !mobile) {
       console.log("hhhh", req.body);

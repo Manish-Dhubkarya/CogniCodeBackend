@@ -1,7 +1,9 @@
 var express = require('express');
 var router = express.Router();
+var initializeDatabase1 = require("./init").initializeDatabase1;
 var pgPool = require("./PostgreSQLPool");
 var upload = require("./multer"); 
+initializeDatabase1();
 router.post('/check_login_head', function (req, res) {
     console.log("LOGIN DATA RECEIVED:", req.body);
 

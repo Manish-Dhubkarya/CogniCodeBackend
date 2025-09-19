@@ -1,11 +1,12 @@
 var express = require("express");
 var router = express.Router();
 var pgPool = require("./PostgreSQLPool");
-var initializeDatabase = require("./init");
+
+var initializeDatabase2=require("./init").initializeDatabase2
 var multer = require("multer");
 var path = require("path");
 var upload = require("./multer");
-initializeDatabase();
+initializeDatabase2();
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -14,30 +15,6 @@ const storage = multer.diskStorage({
   filename: function (req, file, cb) {
     cb(null, Date.now() + path.extname(file.originalname));
   },
-});
-
-router.get("/init", function (req, res) {
-  const query = `
-    CREATE SCHEMA IF NOT EXISTS projectschema;
-    CREATE TABLE IF NOT EXISTS projectschema."employeeRequests" (
-      request_id SERIAL PRIMARY KEY,
-      project_id INTEGER,
-      employeeId INTEGER UNIQUE,
-      status VARCHAR(50) DEFAULT 'pending',
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-  `;
-  pgPool.query(query, function (error, result) {
-    if (error) {
-      console.error("Database Initialization Error:", error);
-      return res
-        .status(500)
-        .json({ status: false, message: `Database Initialization Failed: ${error.message}` });
-    }
-    return res
-      .status(200)
-      .json({ status: true, message: "Database Initialized Successfully!" });
-  });
 });
 
 // Submit a request to employeeRequests
