@@ -16,19 +16,13 @@ const storage = multer.diskStorage({
   },
 });
 
-// Initialize database with updated schema
 router.get("/init", function (req, res) {
   const query = `
     CREATE SCHEMA IF NOT EXISTS projectschema;
     CREATE TABLE IF NOT EXISTS projectschema."employeeRequests" (
       request_id SERIAL PRIMARY KEY,
       project_id INTEGER,
-      employeeId INTEGER,
-      workstream VARCHAR(255),
-      title VARCHAR(255),
-      clientName VARCHAR(255),
-      deadline DATE,
-      description TEXT,
+      employeeId INTEGER UNIQUE,
       status VARCHAR(50) DEFAULT 'pending',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -50,8 +44,8 @@ router.get("/init", function (req, res) {
 router.post("/submit_request", async function (req, res) {
   console.log("RECEIVED REQUEST DATA:", req.body);
   try {
-    const { project_id, employeeId, workstream, title, clientName, deadline, description, status } = req.body;
-    if (!project_id || !employeeId || !workstream || !title || !clientName || !deadline || !description) {
+    const { project_id, employeeId, status } = req.body;
+    if (!project_id || !employeeId || !status) {
       return res.status(400).json({ status: false, message: "All fields are required." });
     }
 
@@ -75,19 +69,14 @@ router.post("/submit_request", async function (req, res) {
 
     const query = `
       INSERT INTO projectschema."employeeRequests"
-      (project_id, employeeId, workstream, title, clientName, deadline, description, status)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING request_id, project_id, employeeId, workstream, title, clientName, deadline, description, status
+      (project_id, employeeId, status)
+      VALUES ($1, $2, $3)
+      RETURNING request_id, project_id, employeeId, status
     `;
     const values = [
       project_id,
       employeeId,
-      workstream,
-      title,
-      clientName,
-      deadline,
-      description,
-      status || "pending",
+      status,
     ];
     const result = await pgPool.query(query, values);
     return res.status(200).json({
@@ -105,20 +94,23 @@ router.post("/submit_request", async function (req, res) {
 router.get("/employee_requests", async function (req, res) {
   try {
     const query = `
-      SELECT 
-        er.request_id,
-        er.project_id::TEXT,
-        er.employeeId,
-        er.workstream,
-        er.title,
-        er.clientName,
-        er.deadline::TEXT,
-        er.description,
-        er.status,
-        er.created_at
-      FROM projectschema."employeeRequests" er
-      ORDER BY er.created_at DESC
-    `;
+    SELECT 
+    er.request_id,
+    er.project_id::TEXT,
+    er.employeeId,
+    cp.workstream,
+    cp.title,
+    cp.deadline::TEXT,
+    cp.description,
+    c."clientName",
+    e."employeeName",
+    e."employeeDesignation",
+    e."employeePic"
+FROM projectschema."employeeRequests" er
+JOIN projectschema.clientproject cp ON er.project_id = cp.project_id
+JOIN "Entities".clients c ON cp.clientid = c."clientId"
+JOIN "Entities".employees e ON er.employeeId::integer = e."employeeId"
+ORDER BY er.created_at DESC;`;
     const result = await pgPool.query(query);
     return res.status(200).json({
       status: true,
@@ -128,6 +120,296 @@ router.get("/employee_requests", async function (req, res) {
   } catch (e) {
     console.error("Server Error:", e);
     return res.status(500).json({ status: false, message: `Server Error: ${e.message}` });
+  }
+});
+
+//extra
+// router.get("/accepted_employee_requests", async function (req, res) {
+//   try {
+//     const query = `
+//       SELECT 
+//         er.request_id,
+//         er.project_id::TEXT,
+//         er.employeeId,
+//         cp.workstream,
+//         cp.title,
+//         cp.deadline::TEXT,
+//         cp.description,
+//         c."clientName",
+//         e."employeeName",
+//         e."employeeDesignation",
+//         e."employeePic",
+//         er.status
+//       FROM projectschema."employeeRequests" er
+//       JOIN projectschema.clientproject cp ON er.project_id = cp.project_id
+//       JOIN "Entities".clients c ON cp.clientid = c."clientId"
+//       JOIN "Entities".employees e ON er.employeeId::integer = e."employeeId"
+//       WHERE er.status = 'accepted'
+//       ORDER BY er.created_at DESC;
+//     `;
+//     pgPool.query(query, (err, result) => {
+//       if (err) {
+//         console.error("Server Error:", err);
+//         return res.status(500).json({ status: false, message: `Server Error: ${err.message}` });
+//       }
+//       return res.status(200).json({
+//         status: true,
+//         message: "Accepted employee requests retrieved successfully!",
+//         data: result.rows,
+//       });
+//     });
+//   } catch (e) {
+//     console.error("Server Error:", e);
+//     return res.status(500).json({ status: false, message: `Server Error: ${e.message}` });
+//   }
+// });
+
+// Check if a request exists
+// Inside your router file
+router.post('/check_request', async (req, res) => {
+  const { project_id, employeeId } = req.body;
+
+  // Validate input
+  console.log('Received body params:', { project_id, employeeId }); // Debug log
+  if (!project_id || !employeeId) {
+    return res.status(400).json({
+      status: false,
+      message: 'project_id and employeeId are required',
+    });
+  }
+
+  try {
+    // Convert to numbers and validate
+    const projectIdNum = Number(project_id);
+    const employeeIdNum = Number(employeeId);
+
+    if (isNaN(projectIdNum) || isNaN(employeeIdNum)) {
+      return res.status(400).json({
+        status: false,
+        message: 'project_id and employeeId must be valid numbers',
+      });
+    }
+
+    // Query the database to check if a request exists
+    const query = `
+      SELECT EXISTS (
+        SELECT 1 FROM projectschema."employeeRequests"
+        WHERE project_id = $1 AND employeeid = $2
+      ) AS exists;
+    `;
+    const values = [projectIdNum, employeeIdNum];
+
+    const result = await pgPool.query(query, values);
+    console.log('Query result:', result.rows); // Debug log
+
+    // Return the response
+    res.status(200).json({
+      status: true,
+      data: {
+        exists: result.rows[0].exists,
+      },
+    });
+  } catch (err) {
+    console.error('Error checking request:', err);
+    res.status(500).json({
+      status: false,
+      message: 'Internal server error',
+    });
+  }
+});
+
+router.get("/project_request_status/:employeeId", async function (req, res) {
+  const { employeeId } = req.params;
+  try {
+    const query = `
+      SELECT 
+        er.request_id,
+        er.project_id::TEXT,
+        er.employeeid,
+        er.status,
+        er.created_at::TEXT,
+        cp.workstream,
+        cp.title,
+        cp.deadline::TEXT,
+        cp.description,
+        c."clientName"
+      FROM projectschema."employeeRequests" er
+      JOIN projectschema.clientproject cp ON er.project_id = cp.project_id
+      JOIN "Entities".clients c ON cp.clientid = c."clientId"
+      WHERE er.employeeid = $1
+      ORDER BY er.created_at DESC;
+    `;
+    const result = await pgPool.query(query, [employeeId]);
+    return res.status(200).json({
+      status: true,
+      message: "Employee requests retrieved successfully!",
+      data: result.rows,
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: `Server Error: ${e.message}` });
+  }
+});
+
+// Update request status
+router.get("/employee_statuses", function (req, res) {
+  console.log("RECEIVED EMPLOYEE STATUSES REQUEST:", req.query);
+  try {
+    const { project_id } = req.query;
+    if (!project_id) {
+      return res.status(400).json({ status: false, message: "project_id is required." });
+    }
+
+    const projectIdNum = Number(project_id);
+    if (isNaN(projectIdNum)) {
+      return res.status(400).json({ status: false, message: "project_id must be a valid number." });
+    }
+
+    const fetchStatusesQuery = `
+      SELECT employeeid AS id, status
+      FROM projectschema."employeeRequests"
+      WHERE project_id = $1;
+    `;
+    pgPool.query(fetchStatusesQuery, [projectIdNum], function (error, result) {
+      if (error) {
+        console.error("Database Error:", error);
+        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+      }
+
+      return res.status(200).json({
+        status: true,
+        data: result.rows,
+      });
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: "Server Error...!" });
+  }
+});
+
+router.get("/project_employee_requests/:projectId", function (req, res) {
+  console.log("RECEIVED PROJECT EMPLOYEE REQUESTS:", req.params);
+  try {
+    const { projectId } = req.params;
+    const projectIdNum = Number(projectId);
+    if (isNaN(projectIdNum)) {
+      return res.status(400).json({ status: false, message: "project_id must be a valid number." });
+    }
+
+    const fetchRequestsQuery = `
+      SELECT 
+        er.request_id,
+        er.employeeid AS id,
+        er.status,
+        e."employeeName" AS name,
+        e."employeePic" AS pic
+      FROM projectschema."employeeRequests" er
+      JOIN "Entities".employees e ON er.employeeid = e."employeeId"::text
+      WHERE er.project_id = $1
+      ORDER BY er.created_at DESC;
+    `;
+    pgPool.query(fetchRequestsQuery, [projectIdNum], function (error, result) {
+      if (error) {
+        console.error("Database Error:", error);
+        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+      }
+
+      return res.status(200).json({
+        status: true,
+        data: result.rows,
+      });
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: "Server Error...!" });
+  }
+});
+
+router.post("/update_request_status", function (req, res) {
+  console.log("RECEIVED UPDATE REQUEST DATA:", req.body);
+  try {
+    const { request_id, project_id, employeeId } = req.body;
+    if (!request_id || !project_id || !employeeId) {
+      console.log("Request", req.body);
+      return res.status(400).json({ status: false, message: "request_id, project_id, and employeeId are required." });
+    }
+
+    const requestIdNum = Number(request_id);
+    const projectIdNum = Number(project_id);
+    const employeeIdStr = String(employeeId);
+
+    if (isNaN(requestIdNum) || isNaN(projectIdNum)) {
+      return res.status(400).json({ status: false, message: "request_id and project_id must be valid numbers." });
+    }
+
+    const updateAssignQuery = `
+      UPDATE projectschema."employeeRequests"
+      SET status = 'accepted'
+      WHERE request_id = $1 AND employeeid = $2
+      RETURNING status;
+    `;
+    pgPool.query(updateAssignQuery, [requestIdNum, employeeIdStr], function (error, result) {
+      if (error) {
+        console.error("Database Error:", error);
+        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+      }
+      if (result.rowCount === 0) {
+        return res.status(404).json({ status: false, message: "No matching request found to assign." });
+      }
+
+      return res.status(200).json({
+        status: true,
+        message: "Request assigned successfully!",
+        updatedStatus: result.rows[0].status,
+      });
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: "Server Error...!" });
+  }
+});
+
+router.post("/decline_request_status", function (req, res) {
+  console.log("RECEIVED DECLINE REQUEST DATA:", req.body);
+  try {
+    const { request_id, project_id, employeeId } = req.body;
+    if (!request_id || !project_id || !employeeId) {
+      console.log("Request", req.body);
+      return res.status(400).json({ status: false, message: "request_id, project_id, and employeeId are required." });
+    }
+
+    const requestIdNum = Number(request_id);
+    const projectIdNum = Number(project_id);
+    const employeeIdStr = String(employeeId);
+
+    if (isNaN(requestIdNum) || isNaN(projectIdNum)) {
+      return res.status(400).json({ status: false, message: "request_id and project_id must be valid numbers." });
+    }
+
+    const updateDeclineQuery = `
+      UPDATE projectschema."employeeRequests"
+      SET status = 'decline'
+      WHERE request_id = $1 AND employeeid = $2
+      RETURNING status;
+    `;
+    pgPool.query(updateDeclineQuery, [requestIdNum, employeeIdStr], function (error, result) {
+      if (error) {
+        console.error("Database Error:", error);
+        return res.status(400).json({ status: false, message: "Database Error, Please contact the admin." });
+      }
+      if (result.rowCount === 0) {
+        return res.status(404).json({ status: false, message: "No matching request found to decline." });
+      }
+
+      return res.status(200).json({
+        status: true,
+        message: "Request declined successfully!",
+        updatedStatus: result.rows[0].status,
+      });
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: "Server Error...!" });
   }
 });
 
@@ -143,7 +425,7 @@ router.post("/save_project", function (req, res) {
       INSERT INTO projectschema.clientproject
       (workstream, title, deadline, budget, description, clientid, clientchats, clientaudios, headchats, headaudios)
       VALUES ($1, $2, $3, $4, ARRAY[$5], $6, ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[])
-      RETURNING project_id
+      RETURNING project_id 
     `;
     const values = [workstream, title, deadline, parseFloat(budget), description, clientid];
     pgPool.query(query, values, function (error, result) {
@@ -168,41 +450,7 @@ router.post("/save_project", function (req, res) {
   }
 });
 
-// Get project by ID
-router.get("/get_project/:projectId", function (req, res) {
-  const { projectId } = req.params;
-  console.log("Project ID:", projectId);
-  try {
-    const query = `
-      SELECT 
-        cp.*, 
-        h."headPic"
-      FROM projectschema.clientproject cp
-      LEFT JOIN "Entities".head h 
-        ON cp.headid = h."headId"
-      WHERE cp.project_id = $1
-    `;
-    pgPool.query(query, [projectId], function (error, result) {
-      if (error) {
-        console.error("Database Error:", error);
-        return res
-          .status(400)
-          .json({ status: false, message: "Database Error, Please contact the admin." });
-      } else if (result.rows.length === 0) {
-        return res.status(404).json({ status: false, message: "Project not found!!" });
-      } else {
-        return res.status(200).json({
-          status: true,
-          message: "Project details retrieved successfully!",
-          data: result.rows[0],
-        });
-      }
-    });
-  } catch (e) {
-    console.error("Server Error:", e);
-    return res.status(500).json({ status: false, message: "Server Error...!" });
-  }
-});
+
 
 // Update project
 router.post("/update_project/:projectId", function (req, res) {
@@ -244,39 +492,76 @@ router.post("/update_project/:projectId", function (req, res) {
 });
 
 // Add client chat to project
-router.post("/add_chat/:projectId", function (req, res) {
+router.post("/add_chat/:projectId", async function (req, res) {
   const { projectId } = req.params;
-  const { type, data, timestamp } = req.body;
+  const { type, data, timestamp, mention } = req.body;
+
+  // Validate required fields
   if (!type || !data || !timestamp) {
     return res.status(400).json({ status: false, message: "Type, data, and timestamp are required." });
   }
-  const chatJson = JSON.stringify({ type, data, timestamp });
+
+  // Validate projectId
+  const projectIdNum = Number(projectId);
+  if (isNaN(projectIdNum)) {
+    return res.status(400).json({ status: false, message: "projectId must be a valid number." });
+  }
+
   try {
+    // Validate project exists
+    const projectCheck = await pgPool.query(
+      "SELECT project_id FROM projectschema.clientproject WHERE project_id = $1",
+      [projectIdNum]
+    );
+    if (projectCheck.rows.length === 0) {
+      return res.status(404).json({ status: false, message: "Project not found." });
+    }
+
+    // Validate mention if provided (client can only mention head)
+    if (mention) {
+      if (mention.type === 'head') {
+        const headCheck = await pgPool.query(
+          'SELECT "headId" FROM "Entities".head WHERE "headId" = $1',
+          [mention.id]
+        );
+        if (headCheck.rows.length === 0) {
+          return res.status(400).json({ status: false, message: "Invalid head mention." });
+        }
+      } else {
+        return res.status(400).json({ status: false, message: "Invalid mention type (client can only mention head)." });
+      }
+    }
+
+    // Prepare chat data with mention
+    const chatJson = JSON.stringify({ 
+      type, 
+      data, 
+      timestamp, 
+      seen: false, 
+      mention: mention || null 
+    });
+
+    // Update clientchats array
     const query = `
       UPDATE projectschema.clientproject
       SET clientchats = array_append(clientchats, $1)
       WHERE project_id = $2
       RETURNING project_id, clientchats
     `;
-    pgPool.query(query, [chatJson, projectId], function (error, result) {
-      if (error) {
-        console.error("Database Error:", error);
-        return res
-          .status(400)
-          .json({ status: false, message: "Database Error, Please contact the admin." });
-      } else if (result.rowCount === 0) {
-        return res.status(404).json({ status: false, message: "Project not found!!" });
-      } else {
-        return res.status(200).json({
-          status: true,
-          message: "Chat added successfully!",
-          data: { project_id: result.rows[0].project_id },
-        });
-      }
+    const result = await pgPool.query(query, [chatJson, projectIdNum]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ status: false, message: "Project not found." });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Client chat added successfully!",
+      data: { project_id: result.rows[0].project_id },
     });
   } catch (e) {
     console.error("Server Error:", e);
-    return res.status(500).json({ status: false, message: "Server Error...!" });
+    return res.status(500).json({ status: false, message: `Server Error: ${e.message}` });
   }
 });
 
@@ -320,7 +605,7 @@ router.post("/add_audio/:projectId", function (req, res) {
 // Add head chat to project
 router.post("/add_head_chat/:projectId", function (req, res) {
   const { projectId } = req.params;
-  const { type, data, timestamp, headid } = req.body; // Assume headid is sent in the request body
+  const { type, data, timestamp, headid, mention } = req.body; // Assume headid is sent in the request body
 
   // Validate required fields
   if (!type || !data || !timestamp) {
@@ -334,7 +619,7 @@ router.post("/add_head_chat/:projectId", function (req, res) {
     return res.status(400).json({ status: false, message: "Head ID is required." });
   }
 
-  const chatJson = JSON.stringify({ type, data, timestamp });
+  const chatJson = JSON.stringify({ type, data, timestamp, mention });
 
   try {
     const query = `
@@ -497,14 +782,159 @@ router.get("/show_all_clientsprojects", function (req, res) {
 });
 
 // Mark message as seen
+router.post("/add_tl_chat/:projectId", async function (req, res) {
+  const { projectId } = req.params;
+  const { type, data, timestamp, teamleaderid, mention } = req.body;
+
+  // Validate required fields
+  if (!type || !data || !timestamp || !teamleaderid) {
+    return res.status(400).json({
+      status: false,
+      message: "Type, data, timestamp, and teamleaderid are required.",
+    });
+  }
+
+  // Validate projectId
+  const projectIdNum = Number(projectId);
+  if (isNaN(projectIdNum)) {
+    return res.status(400).json({ status: false, message: "projectId must be a valid number." });
+  }
+
+  try {
+    // Validate project exists
+    const projectCheck = await pgPool.query(
+      "SELECT project_id FROM projectschema.clientproject WHERE project_id = $1",
+      [projectIdNum]
+    );
+    if (projectCheck.rows.length === 0) {
+      return res.status(404).json({ status: false, message: "Project not found." });
+    }
+
+    // Validate teamleaderid exists and has role 'Team Leader'
+    const teamLeaderCheck = await pgPool.query(
+      'SELECT "employeeId" FROM "Entities".employees WHERE "employeeId" = $1 AND role = $2',
+      [teamleaderid, 'Team Leader']
+    );
+    if (teamLeaderCheck.rows.length === 0) {
+      return res.status(404).json({ status: false, message: "Team Leader not found or invalid role." });
+    }
+
+    // Validate mention if provided
+    if (mention) {
+      if (mention.type === 'client') {
+        const clientCheck = await pgPool.query(
+          'SELECT "clientId" FROM "Entities".clients WHERE "clientId" = $1',
+          [mention.id]
+        );
+        if (clientCheck.rows.length === 0) {
+          return res.status(400).json({ status: false, message: "Invalid client mention." });
+        }
+      } else if (mention.type === 'head') {
+        const headCheck = await pgPool.query(
+          'SELECT "headId" FROM "Entities".head WHERE "headId" = $1',
+          [mention.id]
+        );
+        if (headCheck.rows.length === 0) {
+          return res.status(400).json({ status: false, message: "Invalid head mention." });
+        }
+      }
+    }
+
+    // Prepare chat data with mention
+    const chatJson = JSON.stringify({ 
+      type, 
+      data, 
+      timestamp, 
+      seen: false, 
+      mention: mention || null 
+    });
+
+    // Update tlchats array
+    const query = `
+      UPDATE projectschema.clientproject
+      SET tlchats = array_append(tlchats, $1),
+          teamleaderid = $3
+      WHERE project_id = $2
+      RETURNING project_id, tlchats, teamleaderid
+    `;
+    const result = await pgPool.query(query, [chatJson, projectIdNum, teamleaderid]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ status: false, message: "Project not found." });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Team Leader chat added successfully!",
+      data: {
+        project_id: result.rows[0].project_id,
+        teamleaderid: result.rows[0].teamleaderid,
+      },
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: `Server Error: ${e.message}` });
+  }
+});
+
+// Update the get_project endpoint to include clientid and headid
+router.get("/get_project/:projectId", function (req, res) {
+  const { projectId } = req.params;
+  console.log("Project ID:", projectId);
+  try {
+    const query = `
+      SELECT 
+        cp.*, 
+        c."clientId" as clientid,
+        c."clientName",
+        c."clientPic",
+        h."headId" as headid,
+        h."headPic",
+        h."headName",
+        e."employeeName" AS "teamLeaderName",
+        e."employeePic" AS "teamLeaderPic"
+      FROM projectschema.clientproject cp
+      LEFT JOIN "Entities".clients c ON cp.clientid = c."clientId"
+      LEFT JOIN "Entities".head h 
+        ON cp.headid = h."headId"
+      LEFT JOIN "Entities".employees e
+        ON cp.teamleaderid = e."employeeId"
+        AND e."role" = 'Team Leader'
+      WHERE cp.project_id = $1
+    `;
+    pgPool.query(query, [projectId], function (error, result) {
+      if (error) {
+        console.error("Database Error:", error);
+        return res
+          .status(400)
+          .json({ status: false, message: "Database Error, Please contact the admin." });
+      } else if (result.rows.length === 0) {
+        return res.status(404).json({ status: false, message: "Project not found!!" });
+      } else {
+        return res.status(200).json({
+          status: true,
+          message: "Project details retrieved successfully!",
+          data: result.rows[0],
+        });
+      }
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: "Server Error...!" });
+  }
+});
+
+// Update mark_message_seen to handle mentions properly
 router.post("/mark_message_seen/:projectId", async (req, res) => {
   const { projectId } = req.params;
-  const { index, fromClient, type } = req.body; // Expect index (msg.id), fromClient (boolean), type ('chat' or 'audio')
+  const { index, fromClient, type, fromHead, fromTeamLeader } = req.body;
 
   if (
     typeof index !== "number" ||
     index < 0 ||
     typeof fromClient !== "boolean" ||
+    typeof fromHead !== "boolean" ||
+    typeof fromTeamLeader !== "boolean" ||
     !["chat", "audio"].includes(type)
   ) {
     return res.status(400).json({ status: false, message: "Invalid request parameters" });
@@ -514,8 +944,12 @@ router.post("/mark_message_seen/:projectId", async (req, res) => {
     let field;
     if (fromClient) {
       field = type === "audio" ? "clientaudios" : "clientchats";
-    } else {
+    } else if (fromHead) {
       field = type === "audio" ? "headaudios" : "headchats";
+    } else if (fromTeamLeader) {
+      field = type === "audio" ? "tlaudios" : "tlchats";
+    } else {
+      return res.status(400).json({ status: false, message: "Invalid sender type" });
     }
 
     const result = await pgPool.query(
@@ -557,6 +991,75 @@ router.post("/mark_message_seen/:projectId", async (req, res) => {
   } catch (error) {
     console.error("Error marking message as seen:", error);
     return res.status(500).json({ status: false, message: "Internal server error" });
+  }
+});
+
+// Add team leader audio to project
+router.post("/add_tl_audio/:projectId", async function (req, res) {
+  const { projectId } = req.params;
+  const { type, data, timestamp, teamleaderid } = req.body;
+
+  // Validate required fields
+  if (!type || !data || !timestamp || !teamleaderid) {
+    return res.status(400).json({
+      status: false,
+      message: "Type, data, timestamp, and teamleaderid are required.",
+    });
+  }
+
+  // Validate projectId
+  const projectIdNum = Number(projectId);
+  if (isNaN(projectIdNum)) {
+    return res.status(400).json({ status: false, message: "projectId must be a valid number." });
+  }
+
+  try {
+    // Validate project exists
+    const projectCheck = await pgPool.query(
+      "SELECT project_id FROM projectschema.clientproject WHERE project_id = $1",
+      [projectIdNum]
+    );
+    if (projectCheck.rows.length === 0) {
+      return res.status(404).json({ status: false, message: "Project not found." });
+    }
+
+    // Validate teamleaderid exists and has role 'Team Leader'
+    const teamLeaderCheck = await pgPool.query(
+      'SELECT "employeeId" FROM "Entities".employees WHERE "employeeId" = $1 AND role = $2',
+      [teamleaderid, 'Team Leader']
+    );
+    if (teamLeaderCheck.rows.length === 0) {
+      return res.status(404).json({ status: false, message: "Team Leader not found or invalid role." });
+    }
+
+    // Prepare audio data
+    const audioJson = JSON.stringify({ type, data, timestamp, seen: false });
+
+    // Update tlaudios array
+    const query = `
+      UPDATE projectschema.clientproject
+      SET tlaudios = array_append(tlaudios, $1),
+          teamleaderid = $3
+      WHERE project_id = $2
+      RETURNING project_id, tlaudios, teamleaderid
+    `;
+    const result = await pgPool.query(query, [audioJson, projectIdNum, teamleaderid]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ status: false, message: "Project not found." });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Team Leader audio added successfully!",
+      data: {
+        project_id: result.rows[0].project_id,
+        teamleaderid: result.rows[0].teamleaderid,
+      },
+    });
+  } catch (e) {
+    console.error("Server Error:", e);
+    return res.status(500).json({ status: false, message: `Server Error: ${e.message}` });
   }
 });
 
