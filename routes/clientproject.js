@@ -1,8 +1,7 @@
 var express = require("express");
 var router = express.Router();
 var pgPool = require("./PostgreSQLPool");
-
-var initializeDatabase2=require("./init").initializeDatabase2
+var initializeDatabase2 = require("./init").initializeDatabase2;
 var multer = require("multer");
 var path = require("path");
 var upload = require("./multer");
@@ -26,7 +25,6 @@ router.post("/submit_request", async function (req, res) {
       return res.status(400).json({ status: false, message: "All fields are required." });
     }
 
-    // Validate project_id exists (application-level check)
     const projectCheck = await pgPool.query(
       "SELECT project_id FROM projectschema.clientproject WHERE project_id = $1",
       [project_id]
@@ -35,7 +33,6 @@ router.post("/submit_request", async function (req, res) {
       return res.status(404).json({ status: false, message: "Project not found." });
     }
 
-    // Validate employeeId exists and is an integer
     const employeeCheck = await pgPool.query(
       'SELECT "employeeId" FROM "Entities".employees WHERE "employeeId" = CAST($1 AS INTEGER)',
       [employeeId]
@@ -50,11 +47,7 @@ router.post("/submit_request", async function (req, res) {
       VALUES ($1, $2, $3)
       RETURNING request_id, project_id, employeeId, status
     `;
-    const values = [
-      project_id,
-      employeeId,
-      status,
-    ];
+    const values = [project_id, employeeId, status];
     const result = await pgPool.query(query, values);
     return res.status(200).json({
       status: true,
@@ -71,23 +64,24 @@ router.post("/submit_request", async function (req, res) {
 router.get("/employee_requests", async function (req, res) {
   try {
     const query = `
-    SELECT 
-    er.request_id,
-    er.project_id::TEXT,
-    er.employeeId,
-    cp.workstream,
-    cp.title,
-    cp.deadline::TEXT,
-    cp.description,
-    c."clientName",
-    e."employeeName",
-    e."employeeDesignation",
-    e."employeePic"
-FROM projectschema."employeeRequests" er
-JOIN projectschema.clientproject cp ON er.project_id = cp.project_id
-JOIN "Entities".clients c ON cp.clientid = c."clientId"
-JOIN "Entities".employees e ON er.employeeId::integer = e."employeeId"
-ORDER BY er.created_at DESC;`;
+      SELECT 
+        er.request_id,
+        er.project_id::TEXT,
+        er.employeeId,
+        cp.workstream,
+        cp.title,
+        cp.deadline::TEXT,
+        cp.description,
+        c."clientName",
+        e."employeeName",
+        e."employeeDesignation",
+        e."employeePic"
+      FROM projectschema."employeeRequests" er
+      JOIN projectschema.clientproject cp ON er.project_id = cp.project_id
+      JOIN "Entities".clients c ON cp.clientid = c."clientId"
+      JOIN "Entities".employees e ON er.employeeId::integer = e."employeeId"
+      ORDER BY er.created_at DESC;
+    `;
     const result = await pgPool.query(query);
     return res.status(200).json({
       status: true,
@@ -100,54 +94,10 @@ ORDER BY er.created_at DESC;`;
   }
 });
 
-//extra
-// router.get("/accepted_employee_requests", async function (req, res) {
-//   try {
-//     const query = `
-//       SELECT 
-//         er.request_id,
-//         er.project_id::TEXT,
-//         er.employeeId,
-//         cp.workstream,
-//         cp.title,
-//         cp.deadline::TEXT,
-//         cp.description,
-//         c."clientName",
-//         e."employeeName",
-//         e."employeeDesignation",
-//         e."employeePic",
-//         er.status
-//       FROM projectschema."employeeRequests" er
-//       JOIN projectschema.clientproject cp ON er.project_id = cp.project_id
-//       JOIN "Entities".clients c ON cp.clientid = c."clientId"
-//       JOIN "Entities".employees e ON er.employeeId::integer = e."employeeId"
-//       WHERE er.status = 'accepted'
-//       ORDER BY er.created_at DESC;
-//     `;
-//     pgPool.query(query, (err, result) => {
-//       if (err) {
-//         console.error("Server Error:", err);
-//         return res.status(500).json({ status: false, message: `Server Error: ${err.message}` });
-//       }
-//       return res.status(200).json({
-//         status: true,
-//         message: "Accepted employee requests retrieved successfully!",
-//         data: result.rows,
-//       });
-//     });
-//   } catch (e) {
-//     console.error("Server Error:", e);
-//     return res.status(500).json({ status: false, message: `Server Error: ${e.message}` });
-//   }
-// });
-
 // Check if a request exists
-// Inside your router file
 router.post('/check_request', async (req, res) => {
   const { project_id, employeeId } = req.body;
-
-  // Validate input
-  console.log('Received body params:', { project_id, employeeId }); // Debug log
+  console.log('Received body params:', { project_id, employeeId });
   if (!project_id || !employeeId) {
     return res.status(400).json({
       status: false,
@@ -156,10 +106,8 @@ router.post('/check_request', async (req, res) => {
   }
 
   try {
-    // Convert to numbers and validate
     const projectIdNum = Number(project_id);
     const employeeIdNum = Number(employeeId);
-
     if (isNaN(projectIdNum) || isNaN(employeeIdNum)) {
       return res.status(400).json({
         status: false,
@@ -167,7 +115,6 @@ router.post('/check_request', async (req, res) => {
       });
     }
 
-    // Query the database to check if a request exists
     const query = `
       SELECT EXISTS (
         SELECT 1 FROM projectschema."employeeRequests"
@@ -175,11 +122,7 @@ router.post('/check_request', async (req, res) => {
       ) AS exists;
     `;
     const values = [projectIdNum, employeeIdNum];
-
     const result = await pgPool.query(query, values);
-    console.log('Query result:', result.rows); // Debug log
-
-    // Return the response
     res.status(200).json({
       status: true,
       data: {
@@ -400,8 +343,8 @@ router.post("/save_project", function (req, res) {
     }
     const query = `
       INSERT INTO projectschema.clientproject
-      (workstream, title, deadline, budget, description, clientid, clientchats, clientaudios, headchats, headaudios)
-      VALUES ($1, $2, $3, $4, ARRAY[$5], $6, ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[])
+      (workstream, title, deadline, budget, description, clientid, clientchats, clientaudios, headchats, headaudios, tlchats, tlaudios)
+      VALUES ($1, $2, $3, $4, ARRAY[$5], $6, ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[])
       RETURNING project_id 
     `;
     const values = [workstream, title, deadline, parseFloat(budget), description, clientid];
@@ -426,8 +369,6 @@ router.post("/save_project", function (req, res) {
     return res.status(500).json({ status: false, message: "Server Error...!" });
   }
 });
-
-
 
 // Update project
 router.post("/update_project/:projectId", function (req, res) {
@@ -473,19 +414,16 @@ router.post("/add_chat/:projectId", async function (req, res) {
   const { projectId } = req.params;
   const { type, data, timestamp, mention } = req.body;
 
-  // Validate required fields
   if (!type || !data || !timestamp) {
     return res.status(400).json({ status: false, message: "Type, data, and timestamp are required." });
   }
 
-  // Validate projectId
   const projectIdNum = Number(projectId);
   if (isNaN(projectIdNum)) {
     return res.status(400).json({ status: false, message: "projectId must be a valid number." });
   }
 
   try {
-    // Validate project exists
     const projectCheck = await pgPool.query(
       "SELECT project_id FROM projectschema.clientproject WHERE project_id = $1",
       [projectIdNum]
@@ -494,7 +432,6 @@ router.post("/add_chat/:projectId", async function (req, res) {
       return res.status(404).json({ status: false, message: "Project not found." });
     }
 
-    // Validate mention if provided (client can only mention head)
     if (mention) {
       if (mention.type === 'head') {
         const headCheck = await pgPool.query(
@@ -509,7 +446,6 @@ router.post("/add_chat/:projectId", async function (req, res) {
       }
     }
 
-    // Prepare chat data with mention
     const chatJson = JSON.stringify({ 
       type, 
       data, 
@@ -518,7 +454,6 @@ router.post("/add_chat/:projectId", async function (req, res) {
       mention: mention || null 
     });
 
-    // Update clientchats array
     const query = `
       UPDATE projectschema.clientproject
       SET clientchats = array_append(clientchats, $1)
@@ -549,7 +484,7 @@ router.post("/add_audio/:projectId", function (req, res) {
   if (!type || !data || !timestamp) {
     return res.status(400).json({ status: false, message: "Type, data, and timestamp are required." });
   }
-  const audioJson = JSON.stringify({ type, data, timestamp });
+  const audioJson = JSON.stringify({ type, data, timestamp, seen: false });
   try {
     const query = `
       UPDATE projectschema.clientproject
@@ -582,27 +517,31 @@ router.post("/add_audio/:projectId", function (req, res) {
 // Add head chat to project
 router.post("/add_head_chat/:projectId", function (req, res) {
   const { projectId } = req.params;
-  const { type, data, timestamp, headid, mention } = req.body; // Assume headid is sent in the request body
+  const { type, data, timestamp, headid, mention } = req.body;
 
-  // Validate required fields
   if (!type || !data || !timestamp) {
     return res
       .status(400)
       .json({ status: false, message: "Type, data, and timestamp are required." });
   }
 
-  // Optional: Validate headid if required
   if (!headid) {
     return res.status(400).json({ status: false, message: "Head ID is required." });
   }
 
-  const chatJson = JSON.stringify({ type, data, timestamp, mention });
+  const chatJson = JSON.stringify({ 
+  type, 
+  data, 
+  timestamp, 
+  seen_by: [],  // Changed from seen: false
+  mention 
+});
 
   try {
     const query = `
       UPDATE projectschema.clientproject
       SET headchats = array_append(headchats, $1),
-      headid = $3
+          headid = $3
       WHERE project_id = $2
       RETURNING project_id, headchats, headid
     `;
@@ -640,7 +579,7 @@ router.post("/add_head_audio/:projectId", function (req, res) {
       .status(400)
       .json({ status: false, message: "Type, data, and timestamp are required." });
   }
-  const audioJson = JSON.stringify({ type, data, timestamp });
+  const audioJson = JSON.stringify({ type, data, timestamp, seen: false });
   try {
     const query = `
       UPDATE projectschema.clientproject
@@ -692,7 +631,6 @@ router.get("/get_client_projects/:clientId", function (req, res) {
   const { clientId } = req.params;
   console.log("Client ID:", clientId);
 
-  // Input validation
   if (!clientId || isNaN(clientId)) {
     return res.status(400).json({
       status: false,
@@ -731,19 +669,17 @@ router.get("/get_client_projects/:clientId", function (req, res) {
           let unread_count = 0;
           let has_unread_mention = false;
 
-          // Combine all messages from Head only
           const receivedMessages = [
             ...(p.headchats || []),
             ...(p.headaudios || []),
-          ];
+          ].filter(msg_str => msg_str && msg_str.trim() !== ""); // Filter empty or invalid entries
 
-          // Process each message to count unread and check for mentions
           receivedMessages.forEach((msg_str) => {
             try {
               const msg = JSON.parse(msg_str);
-              if (!msg.seen) {
+              if (msg.seen === false) {
                 unread_count++;
-                if (msg.mention && msg.mention.type === "client" && msg.mention.id === clientId) {
+                if (msg.mention && msg.mention.type === "client" && msg.mention.id.toString() === clientId.toString()) {
                   has_unread_mention = true;
                 }
               }
@@ -756,7 +692,7 @@ router.get("/get_client_projects/:clientId", function (req, res) {
             ...p,
             unread_count,
             has_unread_mention,
-            headname: p.headname || "Head", // Fallback if headname is missing
+            headname: p.headname || "Head",
           };
         });
 
@@ -797,6 +733,8 @@ router.get("/show_all_clientsprojects", function (req, res) {
         cp.clientaudios,
         cp.headchats,
         cp.headaudios,
+        cp.tlchats,
+        cp.tlaudios,
         c."clientName",
         c."clientPic"
       FROM projectschema.clientproject cp
@@ -824,11 +762,85 @@ router.get("/show_all_clientsprojects", function (req, res) {
 });
 
 // Mark message as seen
+router.post("/mark_message_seen/:projectId", async (req, res) => {
+  const { projectId } = req.params;
+  const { index, fromClient, type, fromHead, fromTeamLeader, viewer } = req.body;
+
+  if (
+    typeof index !== "number" ||
+    index < 0 ||
+    typeof fromClient !== "boolean" ||
+    typeof fromHead !== "boolean" ||
+    typeof fromTeamLeader !== "boolean" ||
+    !["chat", "audio"].includes(type) ||
+    !["client", "head", "tl"].includes(viewer)
+  ) {
+    return res.status(400).json({ status: false, message: "Invalid request parameters" });
+  }
+
+  try {
+    let field;
+    if (fromClient) {
+      field = type === "audio" ? "clientaudios" : "clientchats";
+    } else if (fromHead) {
+      field = type === "audio" ? "headaudios" : "headchats";
+    } else if (fromTeamLeader) {
+      field = type === "audio" ? "tlaudios" : "tlchats";
+    } else {
+      return res.status(400).json({ status: false, message: "Invalid sender type" });
+    }
+
+    const result = await pgPool.query(
+      `SELECT ${field} FROM projectschema.clientproject WHERE project_id = $1`,
+      [projectId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ status: false, message: "Project not found" });
+    }
+
+    const messages = result.rows[0][field] || [];
+
+    if (index >= messages.length) {
+      return res.status(400).json({ status: false, message: "Invalid message index" });
+    }
+
+    let msgObj;
+    try {
+      msgObj = JSON.parse(messages[index]);
+    } catch (parseError) {
+      console.error("Error parsing message JSON:", parseError);
+      return res.status(500).json({ status: false, message: "Invalid message format" });
+    }
+
+    if (!Array.isArray(msgObj.seen_by)) {
+      msgObj.seen_by = [];  // Fallback if old format
+    }
+
+    if (msgObj.seen_by.includes(viewer)) {
+      return res.status(200).json({ status: true, message: "Message already seen by this user" });
+    }
+
+    msgObj.seen_by.push(viewer);
+    messages[index] = JSON.stringify(msgObj);
+
+    await pgPool.query(
+      `UPDATE projectschema.clientproject SET ${field} = $1 WHERE project_id = $2`,
+      [messages, projectId]
+    );
+
+    return res.status(200).json({ status: true, message: "Message marked as seen" });
+  } catch (error) {
+    console.error("Error marking message as seen:", error);
+    return res.status(500).json({ status: false, message: "Internal server error" });
+  }
+});
+
+// Add team leader chat to project
 router.post("/add_tl_chat/:projectId", async function (req, res) {
   const { projectId } = req.params;
   const { type, data, timestamp, teamleaderid, mention } = req.body;
 
-  // Validate required fields
   if (!type || !data || !timestamp || !teamleaderid) {
     return res.status(400).json({
       status: false,
@@ -836,14 +848,12 @@ router.post("/add_tl_chat/:projectId", async function (req, res) {
     });
   }
 
-  // Validate projectId
   const projectIdNum = Number(projectId);
   if (isNaN(projectIdNum)) {
     return res.status(400).json({ status: false, message: "projectId must be a valid number." });
   }
 
   try {
-    // Validate project exists
     const projectCheck = await pgPool.query(
       "SELECT project_id FROM projectschema.clientproject WHERE project_id = $1",
       [projectIdNum]
@@ -852,7 +862,6 @@ router.post("/add_tl_chat/:projectId", async function (req, res) {
       return res.status(404).json({ status: false, message: "Project not found." });
     }
 
-    // Validate teamleaderid exists and has role 'Team Leader'
     const teamLeaderCheck = await pgPool.query(
       'SELECT "employeeId" FROM "Entities".employees WHERE "employeeId" = $1 AND role = $2',
       [teamleaderid, 'Team Leader']
@@ -861,7 +870,6 @@ router.post("/add_tl_chat/:projectId", async function (req, res) {
       return res.status(404).json({ status: false, message: "Team Leader not found or invalid role." });
     }
 
-    // Validate mention if provided
     if (mention) {
       if (mention.type === 'client') {
         const clientCheck = await pgPool.query(
@@ -882,7 +890,6 @@ router.post("/add_tl_chat/:projectId", async function (req, res) {
       }
     }
 
-    // Prepare chat data with mention
     const chatJson = JSON.stringify({ 
       type, 
       data, 
@@ -891,7 +898,6 @@ router.post("/add_tl_chat/:projectId", async function (req, res) {
       mention: mention || null 
     });
 
-    // Update tlchats array
     const query = `
       UPDATE projectschema.clientproject
       SET tlchats = array_append(tlchats, $1),
@@ -937,11 +943,8 @@ router.get("/get_project/:projectId", function (req, res) {
         e."employeePic" AS "teamLeaderPic"
       FROM projectschema.clientproject cp
       LEFT JOIN "Entities".clients c ON cp.clientid = c."clientId"
-      LEFT JOIN "Entities".head h 
-        ON cp.headid = h."headId"
-      LEFT JOIN "Entities".employees e
-        ON cp.teamleaderid = e."employeeId"
-        AND e."role" = 'Team Leader'
+      LEFT JOIN "Entities".head h ON cp.headid = h."headId"
+      LEFT JOIN "Entities".employees e ON cp.teamleaderid = e."employeeId" AND e."role" = 'Team Leader'
       WHERE cp.project_id = $1
     `;
     pgPool.query(query, [projectId], function (error, result) {
@@ -966,82 +969,11 @@ router.get("/get_project/:projectId", function (req, res) {
   }
 });
 
-// Update mark_message_seen to handle mentions properly
-router.post("/mark_message_seen/:projectId", async (req, res) => {
-  const { projectId } = req.params;
-  const { index, fromClient, type, fromHead, fromTeamLeader } = req.body;
-
-  if (
-    typeof index !== "number" ||
-    index < 0 ||
-    typeof fromClient !== "boolean" ||
-    typeof fromHead !== "boolean" ||
-    typeof fromTeamLeader !== "boolean" ||
-    !["chat", "audio"].includes(type)
-  ) {
-    return res.status(400).json({ status: false, message: "Invalid request parameters" });
-  }
-
-  try {
-    let field;
-    if (fromClient) {
-      field = type === "audio" ? "clientaudios" : "clientchats";
-    } else if (fromHead) {
-      field = type === "audio" ? "headaudios" : "headchats";
-    } else if (fromTeamLeader) {
-      field = type === "audio" ? "tlaudios" : "tlchats";
-    } else {
-      return res.status(400).json({ status: false, message: "Invalid sender type" });
-    }
-
-    const result = await pgPool.query(
-      `SELECT ${field} FROM projectschema.clientproject WHERE project_id = $1`,
-      [projectId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ status: false, message: "Project not found" });
-    }
-
-    const messages = result.rows[0][field] || [];
-
-    if (index >= messages.length) {
-      return res.status(400).json({ status: false, message: "Invalid message index" });
-    }
-
-    let msgObj;
-    try {
-      msgObj = JSON.parse(messages[index]);
-    } catch (parseError) {
-      console.error("Error parsing message JSON:", parseError);
-      return res.status(500).json({ status: false, message: "Invalid message format" });
-    }
-
-    if (msgObj.seen === true) {
-      return res.status(200).json({ status: true, message: "Message already seen" });
-    }
-
-    msgObj.seen = true;
-    messages[index] = JSON.stringify(msgObj);
-
-    await pgPool.query(
-      `UPDATE projectschema.clientproject SET ${field} = $1 WHERE project_id = $2`,
-      [messages, projectId]
-    );
-
-    return res.status(200).json({ status: true, message: "Message marked as seen" });
-  } catch (error) {
-    console.error("Error marking message as seen:", error);
-    return res.status(500).json({ status: false, message: "Internal server error" });
-  }
-});
-
 // Add team leader audio to project
 router.post("/add_tl_audio/:projectId", async function (req, res) {
   const { projectId } = req.params;
   const { type, data, timestamp, teamleaderid } = req.body;
 
-  // Validate required fields
   if (!type || !data || !timestamp || !teamleaderid) {
     return res.status(400).json({
       status: false,
@@ -1049,14 +981,12 @@ router.post("/add_tl_audio/:projectId", async function (req, res) {
     });
   }
 
-  // Validate projectId
   const projectIdNum = Number(projectId);
   if (isNaN(projectIdNum)) {
     return res.status(400).json({ status: false, message: "projectId must be a valid number." });
   }
 
   try {
-    // Validate project exists
     const projectCheck = await pgPool.query(
       "SELECT project_id FROM projectschema.clientproject WHERE project_id = $1",
       [projectIdNum]
@@ -1065,7 +995,6 @@ router.post("/add_tl_audio/:projectId", async function (req, res) {
       return res.status(404).json({ status: false, message: "Project not found." });
     }
 
-    // Validate teamleaderid exists and has role 'Team Leader'
     const teamLeaderCheck = await pgPool.query(
       'SELECT "employeeId" FROM "Entities".employees WHERE "employeeId" = $1 AND role = $2',
       [teamleaderid, 'Team Leader']
@@ -1074,10 +1003,8 @@ router.post("/add_tl_audio/:projectId", async function (req, res) {
       return res.status(404).json({ status: false, message: "Team Leader not found or invalid role." });
     }
 
-    // Prepare audio data
     const audioJson = JSON.stringify({ type, data, timestamp, seen: false });
 
-    // Update tlaudios array
     const query = `
       UPDATE projectschema.clientproject
       SET tlaudios = array_append(tlaudios, $1),
