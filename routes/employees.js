@@ -448,4 +448,39 @@ router.get('/fetch_all_employees', async function (req, res) {
   }
 });
 
+router.get('/fetch_employees_list', async function (req, res) {
+  try {
+    const query = `
+      SELECT 
+        "employeeId",
+        "employeeName",
+        "employeeDesignation",
+        "employeeMail",
+        "employmentID",
+        "gender",
+        "employeePic",
+        "role",
+        CASE 
+          WHEN "role" = 'Team Leader' THEN "securityKey"
+          ELSE NULL
+        END AS "securityKey"
+      FROM "Entities".employees
+      WHERE "role" IN ('Employee', 'Team Leader')
+    `;
+
+    const result = await pgPool.query(query);
+
+    res.json({
+      status: true,
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error("Error fetching employees:", error);
+    res.status(500).json({
+      status: false,
+      message: "Internal server error",
+    });
+  }
+});
+
 module.exports = router;
