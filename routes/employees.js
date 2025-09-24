@@ -483,4 +483,31 @@ router.get('/fetch_employees_list', async function (req, res) {
   }
 });
 
+router.post('/change_employees_role', async (req, res) => {
+  const { employeeId, role, securityKey } = req.body;
+
+  if (!employeeId || !role) {
+    return res.status(400).json({ status: false, message: 'employeeId and role are required.' });
+  }
+
+  try {
+    const query = `
+      UPDATE "Entities".employees 
+      SET role = $1, "securityKey" = $2 
+      WHERE "employeeId" = $3 
+      RETURNING *;
+    `;
+    const result = await pgPool.query(query, [role, securityKey || null, employeeId]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ status: false, message: 'Employee not found.' });
+    }
+
+    res.json({ status: true, data: result.rows[0] });
+  } catch (error) {
+    console.error('Error updating employee role:', error);
+    res.status(500).json({ status: false, message: 'Internal server error.' });
+  }
+});
+
 module.exports = router;
