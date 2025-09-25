@@ -67,7 +67,8 @@ router.get("/employee_requests", async function (req, res) {
       SELECT 
         er.request_id,
         er.project_id::TEXT,
-        er.employeeId,
+        er.employeeid,
+        er.status,
         cp.workstream,
         cp.title,
         cp.deadline::TEXT,
