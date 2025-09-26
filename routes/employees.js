@@ -516,30 +516,25 @@ router.get('/fetch_employee_by_projectid/:projectId', async (req, res) => {
   try {
     const query = `
       SELECT 
-    e."employeeId",
-    e."employeeName",
-    e."employeeDesignation",
-    e."employeeMail",
-    e."employmentID",
-    e."employeePic",
-    e.role
-FROM projectschema."employeeRequests" er
-JOIN "Entities".employees e 
-    ON er.employeeid::integer = e."employeeId"
-WHERE er.project_id = $1
-  AND e.role IN ('Employee', 'Team Leader');
+        e."employeeId",
+        e."employeeName",
+        e."employeeDesignation",
+        e."employeeMail",
+        e."employmentID",
+        e."employeePic",
+        e.role
+      FROM projectschema."employeeRequests" er
+      JOIN "Entities".employees e 
+        ON er.employeeid::integer = e."employeeId"
+      WHERE er.project_id = $1
+        AND e.role = 'Employee';
     `;
     const result = await pgPool.query(query, [projectId]);
-
-    // Separate Team Leader and Employees
-    const teamLeaders = result.rows.filter(emp => emp.role === 'Team Leader');
-    const employees = result.rows.filter(emp => emp.role === 'Employee');
 
     res.json({
       status: true,
       data: {
-        teamLeaders,
-        employees
+        employees: result.rows
       }
     });
   } catch (error) {
