@@ -510,4 +510,45 @@ router.post('/change_employees_role', async (req, res) => {
   }
 });
 
+router.get('/fetch_employee_by_projectid/:projectId', async (req, res) => {
+  const { projectId } = req.params;
+
+  try {
+    const query = `
+      SELECT 
+    e."employeeId",
+    e."employeeName",
+    e."employeeDesignation",
+    e."employeeMail",
+    e."employmentID",
+    e."employeePic",
+    e.role
+FROM projectschema."employeeRequests" er
+JOIN "Entities".employees e 
+    ON er.employeeid::integer = e."employeeId"
+WHERE er.project_id = $1
+  AND e.role IN ('Employee', 'Team Leader');
+    `;
+    const result = await pgPool.query(query, [projectId]);
+
+    // Separate Team Leader and Employees
+    const teamLeaders = result.rows.filter(emp => emp.role === 'Team Leader');
+    const employees = result.rows.filter(emp => emp.role === 'Employee');
+
+    res.json({
+      status: true,
+      data: {
+        teamLeaders,
+        employees
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching employees for project:', error);
+    res.status(500).json({
+      status: false,
+      message: 'Failed to fetch employees for project.'
+    });
+  }
+});
+
 module.exports = router;
