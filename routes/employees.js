@@ -483,6 +483,7 @@ router.get('/fetch_employees_list', async function (req, res) {
   }
 });
 
+// Change Employee Role with Email Notification
 router.post('/change_employees_role', async (req, res) => {
   const { employeeId, role, securityKey } = req.body;
 
@@ -491,19 +492,48 @@ router.post('/change_employees_role', async (req, res) => {
   }
 
   try {
-    const query = `
+    // Fetch employee details to get email and name
+    const fetchQuery = `
+      SELECT "employeeName", "employeeMail"
+      FROM "Entities".employees
+      WHERE "employeeId" = $1
+    `;
+    const fetchResult = await pgPool.query(fetchQuery, [employeeId]);
+
+    if (fetchResult.rows.length === 0) {
+      return res.status(404).json({ status: false, message: 'Employee not found.' });
+    }
+
+    const { employeeName, employeeMail } = fetchResult.rows[0];
+
+    // Update employee role
+    const updateQuery = `
       UPDATE "Entities".employees 
       SET role = $1, "securityKey" = $2 
       WHERE "employeeId" = $3 
       RETURNING *;
     `;
-    const result = await pgPool.query(query, [role, securityKey || null, employeeId]);
+    const updateResult = await pgPool.query(updateQuery, [role, securityKey || null, employeeId]);
 
-    if (result.rowCount === 0) {
+    if (updateResult.rowCount === 0) {
       return res.status(404).json({ status: false, message: 'Employee not found.' });
     }
 
-    res.json({ status: true, data: result.rows[0] });
+    // Send email notification
+    try {
+      await transporter.sendMail({
+        from: process.env.GMAIL_USER,
+        to: employeeMail,
+        subject: 'Role Change Notification - CogniCode Project Management',
+        text: `Dear ${employeeName},\n\nYour role has been updated to "${role}" in the CogniCode Project Management system.\n\nPlease log in to review your new responsibilities.\n\nBest regards,\nCogniCode Team`
+      });
+      console.log(`Role change email sent to ${employeeMail}`);
+    } catch (emailError) {
+      console.error(`Failed to send email to ${employeeMail}:`, emailError);
+      // Note: We don't fail the request due to email error, just log it
+    }
+
+    res.json({ status: true, data: updateResult.rows[0] });
   } catch (error) {
     console.error('Error updating employee role:', error);
     res.status(500).json({ status: false, message: 'Internal server error.' });
@@ -542,6 +572,53 @@ router.get('/fetch_employee_by_projectid/:projectId', async (req, res) => {
     res.status(500).json({
       status: false,
       message: 'Failed to fetch employees for project.'
+    });
+  }
+});
+
+router.post('/verify_employee_role', async function (req, res) {
+  const { employeeId, role } = req.body;
+  
+  console.log("Verify request:", { employeeId, role });
+  
+  if (!employeeId || !role) {
+    return res.status(400).json({
+      status: false,
+      message: "employeeId and role are required."
+    });
+  }
+
+  try {
+    // Query to check if employeeId exists and role matches
+    const query = `
+      SELECT "employeeId", "role" 
+      FROM "Entities".employees 
+      WHERE "employeeId" = $1 AND "role" = $2
+    `;
+    const values = [parseInt(employeeId), role]; // Cast employeeId to int if needed
+    const result = await pgPool.query(query, values);
+    
+    console.log("Query result:", result.rows);
+    
+    if (result.rows.length > 0) {
+      // Match found
+      return res.status(200).json({
+        status: true,
+        message: "Role verified successfully.",
+        data: result.rows[0]
+      });
+    } else {
+      // No match
+      return res.status(404).json({
+        status: false,
+        message: "Employee ID or role does not match."
+      });
+    }
+  } catch (e) {
+    console.error("Server Error in verify employee role:", e);
+    return res.status(500).json({
+      status: false,
+      message: "Server Error: " + e.message
     });
   }
 });

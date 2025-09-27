@@ -117,19 +117,29 @@ router.post('/check_request', async (req, res) => {
     }
 
     const query = `
-      SELECT EXISTS (
-        SELECT 1 FROM projectschema."employeeRequests"
-        WHERE project_id = $1 AND employeeid = $2
-      ) AS exists;
+      SELECT status FROM projectschema."employeeRequests"
+      WHERE project_id = $1 AND employeeId = $2
     `;
     const values = [projectIdNum, employeeIdNum];
     const result = await pgPool.query(query, values);
-    res.status(200).json({
-      status: true,
-      data: {
-        exists: result.rows[0].exists,
-      },
-    });
+
+    if (result.rows.length > 0) {
+      return res.status(200).json({
+        status: true,
+        data: {
+          exists: true,
+          status: result.rows[0].status, // Return the status
+        },
+      });
+    } else {
+      return res.status(200).json({
+        status: true,
+        data: {
+          exists: false,
+          status: null, // No request exists
+        },
+      });
+    }
   } catch (err) {
     console.error('Error checking request:', err);
     res.status(500).json({
@@ -144,21 +154,21 @@ router.get("/project_request_status/:employeeId", async function (req, res) {
   try {
     const query = `
       SELECT 
-        er.request_id,
-        er.project_id::TEXT,
-        er.employeeid,
-        er.status,
-        er.created_at::TEXT,
-        cp.workstream,
-        cp.title,
-        cp.deadline::TEXT,
-        cp.description,
-        c."clientName"
-      FROM projectschema."employeeRequests" er
-      JOIN projectschema.clientproject cp ON er.project_id = cp.project_id
-      JOIN "Entities".clients c ON cp.clientid = c."clientId"
-      WHERE er.employeeid = $1
-      ORDER BY er.created_at DESC;
+    er.request_id,
+    er.project_id::TEXT, -- Ensure project_id is a string
+    er.employeeid,
+    er.status,
+    er.created_at::TEXT,
+    cp.workstream,
+    cp.title,
+    cp.deadline::TEXT,
+    cp.description,
+    c."clientName"
+  FROM projectschema."employeeRequests" er
+  JOIN projectschema.clientproject cp ON er.project_id = cp.project_id
+  JOIN "Entities".clients c ON cp.clientid = c."clientId"
+  WHERE er.employeeid = $1
+  ORDER BY er.created_at DESC;
     `;
     const result = await pgPool.query(query, [employeeId]);
     return res.status(200).json({
