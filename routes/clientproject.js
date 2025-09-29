@@ -1044,4 +1044,3 @@ router.post("/add_tl_audio/:projectId", async function (req, res) {
 });
 
 module.exports = router;
-console.log("Client Project route loaded...");

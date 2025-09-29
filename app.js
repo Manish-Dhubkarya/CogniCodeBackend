@@ -4,7 +4,8 @@ var path = require('path');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 var cors = require("cors");
-
+var http = require('http');
+var { Server } = require('socket.io');
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users')
 var conferencesRouter = require('./routes/conferences')
@@ -18,6 +19,17 @@ var clientProjectRouter=require('./routes/clientproject')
 var teamLeaderRouter=require('./routes/teamleader')
 
 var app = express();
+var server = http.createServer(app); // Create HTTP server for Socket.io
+var io = new Server(server, {
+  cors: {
+    origin: "*", // Adjust for production (e.g., your frontend URL)
+    methods: ["GET", "POST"],
+  },
+});
+
+// Pass Socket.io instance to clientProjectRouter
+clientProjectRouter.attachIo(io);
+
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
 app.use(cors())
@@ -36,7 +48,7 @@ app.use('/clientInquiry', clientInquiryRouter)
 app.use('/employees', employeesRouter);
 app.use('/clients', clientsRouter);
 app.use('/head', headRouter);
-app.use('/clientproject', clientProjectRouter);
+app.use('/clientproject', clientProjectRouter.router);
 app.use('/teamleader', teamLeaderRouter);
 
 // catch 404 and forward to error handler
