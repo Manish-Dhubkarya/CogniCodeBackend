@@ -27,8 +27,8 @@ var io = new Server(server, {
   },
 });
 
-// Pass Socket.io instance to clientProjectRouter
-clientProjectRouter.attachIo(io);
+// IO.attach
+// clientProjectRouter.attachIo(io);
 
 app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
@@ -48,7 +48,8 @@ app.use('/clientInquiry', clientInquiryRouter)
 app.use('/employees', employeesRouter);
 app.use('/clients', clientsRouter);
 app.use('/head', headRouter);
-app.use('/clientproject', clientProjectRouter.router);
+// app.use('/clientproject', clientProjectRouter.router);
+app.use('/clientproject', clientProjectRouter);
 app.use('/teamleader', teamLeaderRouter);
 
 // catch 404 and forward to error handler
