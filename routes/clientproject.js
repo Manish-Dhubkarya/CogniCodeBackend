@@ -1,7 +1,7 @@
 var express = require("express");
 var router = express.Router();
 var pgPool = require("./PostgreSQLPool");
-var initializeDatabase2 = require("./init").initializeDatabase2;
+var {initializeDatabase2} = require("./init");
 var multer = require("multer");
 var path = require("path");
 var upload = require("./multer");
@@ -1040,6 +1040,23 @@ router.post("/add_tl_audio/:projectId", async function (req, res) {
   } catch (e) {
     console.error("Server Error:", e);
     return res.status(500).json({ status: false, message: `Server Error: ${e.message}` });
+  }
+});
+
+router.post('/assign_project_monitor', async function (req, res) {
+  const { employeeId, projectId, status } = req.body;
+  if (!employeeId || !projectId || !status) {
+    return res.status(400).json({ status: false, message: 'Missing required fields' });
+  }
+  try {
+    await pgPool.query(
+      'INSERT INTO projectschema."projectMonitors" ("employeeId", "projectId", "status") VALUES ($1, $2, $3)',
+      [employeeId, projectId, status]
+    );
+    res.json({ status: true, message: 'Monitor assigned successfully' });
+  } catch (err) {
+    console.error('Error assigning monitor:', err);
+    res.status(500).json({ status: false, message: 'Failed to assign monitor' });
   }
 });
 
