@@ -120,6 +120,17 @@ const initializeDatabase2 = async () => {
         "projectId" INTEGER NOT NULL,
         "status" VARCHAR(255) NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS projectschema."projectTLClientChats" (
+    "projectId" INTEGER REFERENCES projectschema.clientproject(project_id) ON DELETE CASCADE,
+    "TeamLeaderId" INTEGER REFERENCES "Entities".employees("employeeId"),
+    "MonitorId" INTEGER REFERENCES "Entities".employees("employeeId"),
+    "TLChats" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "TLAudios" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "MonitorChats" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    "MonitorAudios" TEXT[] DEFAULT ARRAY[]::TEXT[],
+    PRIMARY KEY ("projectId")
+);
     `);
 
     console.log("✅ Database 2 (ProjectSchema) initialized successfully.");
