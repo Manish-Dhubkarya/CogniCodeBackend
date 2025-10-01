@@ -1220,9 +1220,9 @@ router.post("/add_monitor_chat/:projectId", async function (req, res) {
       return res.status(404).json({ status: false, message: "Project not found." });
     }
 
-    // Check sender is Project Monitor for this project
+    // Check sender is Project Monitor for this project (fixed ambiguous column)
     const monitorCheck = await pgPool.query(
-      'SELECT "employeeId" FROM projectschema."projectMonitors" pm JOIN "Entities".employees e ON pm."employeeId" = e."employeeId" WHERE pm."employeeId" = $1 AND pm."projectId" = $2 AND pm."status" = $3',
+      'SELECT pm."employeeId" FROM projectschema."projectMonitors" pm JOIN "Entities".employees e ON pm."employeeId" = e."employeeId" WHERE pm."employeeId" = $1 AND pm."projectId" = $2 AND pm."status" = $3',
       [monitorid, projectIdNum, 'Project Monitor']
     );
     if (monitorCheck.rows.length === 0) {
@@ -1258,7 +1258,7 @@ router.post("/add_monitor_chat/:projectId", async function (req, res) {
       data: { projectId: result.rows[0].projectId },
     });
   } catch (e) {
-    console.error("Server Error:", e);
+    console.error("Server ErrorA:", e);
     return res.status(500).json({ status: false, message: `Server Error: ${e.message}` });
   }
 });
@@ -1465,14 +1465,14 @@ router.get("/is_employee_chat_eligible/:projectId/:employeeId", async function (
       return res.status(404).json({ status: false, message: "Project not found." });
     }
 
-    // Step 2: Count unique assigned employees with 'accepted' or 'TLAssign'
+    // Step 2: Count unique assigned employees with 'accepted' or 'TLAssign' in employeeRequests (cast to string for comparison)
     const assignedQuery = `
-      SELECT DISTINCT "employeeId"
+      SELECT DISTINCT employeeid::TEXT as employeeid_str
       FROM projectschema."employeeRequests"
       WHERE "project_id" = $1 AND "status" IN ('accepted', 'TLAssign')
     `;
     const assignedResult = await pgPool.query(assignedQuery, [projectIdNum]);
-    const assignedEmployees = assignedResult.rows.map(row => row.employeeId);
+    const assignedEmployees = assignedResult.rows.map(row => row.employeeid_str);
     const assignedCount = assignedEmployees.length;
     const isSoleEmployee = assignedCount === 1 && assignedEmployees[0] === employeeId;
 
@@ -1505,58 +1505,98 @@ router.get("/is_employee_chat_eligible/:projectId/:employeeId", async function (
       return res.status(404).json({ status: false, message: "Employee not found." });
     }
     const { role, employeeDesignation } = employeeResult.rows[0];
-    if (role === 'Team Leader') {
-      return res.status(200).json({ status: true, showChat: false });
-    }
 
-    // Parse employee's department
+    // Parse employee's department early
     const empDeptMatch = employeeDesignation.match(/\(([^)]+)\)$/);
     const empDept = empDeptMatch ? empDeptMatch[1].trim() : null;
-    if (!empDept) {
-      return res.status(400).json({ status: false, message: "Invalid employee designation format." });
-    }
 
-    // Step 6: Get Team Leader's designation
-    const tlQuery = `
-      SELECT e."employeeDesignation"
-      FROM "Entities".employees e
-      JOIN projectschema.clientproject cp ON cp.teamleaderid = e."employeeId"
-      WHERE cp.project_id = $1 AND e."role" = 'Team Leader'
-    `;
-    const tlResult = await pgPool.query(tlQuery, [projectIdNum]);
-    if (tlResult.rows.length === 0) {
-      return res.status(404).json({ status: false, message: "Team Leader not found for project." });
-    }
-    const tlDesignation = tlResult.rows[0].employeeDesignation;
-    const tlDeptMatch = tlDesignation.match(/\(([^)]+)\)$/);
-    const tlDept = tlDeptMatch ? tlDeptMatch[1].trim() : null;
-    if (!tlDept) {
-      return res.status(400).json({ status: false, message: "Invalid Team Leader designation format." });
-    }
+    // Step 5.1: Check if employee is Project Head (in "Entities".head)
+    const headCheck = await pgPool.query(
+      'SELECT "headId" FROM "Entities".head WHERE "headId" = $1',
+      [employeeId]
+    );
+    const isHead = headCheck.rows.length > 0;
 
-    // Step 7: Check departments match
-    const sameDept = empDept === tlDept;
-
-    // Step 8: Determine showChat
     let showChat = false;
-    if (sameDept) {
-      if (assignedCount > 1 && isMonitor) {
-        // Multiple employees, current is Project Monitor
-        showChat = true;
-      } else if (isSoleEmployee && !hasMonitor) {
-        // Sole employee, no Project Monitor
-        showChat = true;
+    let message = "";
+    let sameDept = false;
+    let tlDept = null;
+
+    if (role === 'Team Leader' || isHead) {
+      // Team Leader or Head always shows chat
+      showChat = true;
+      message = "Eligible as Team Leader or Head";
+      sameDept = true;  // Not applicable, but set for return
+    } else {
+      // For regular employees
+      if (assignedCount === 0) {
+        message = "No assignments found.";
+      } else {
+        if (!empDept) {
+          return res.status(400).json({ status: false, message: "Invalid employee designation format (missing department)." });
+        }
+
+        // Get Team Leader's designation and department
+        const tlQuery = `
+          SELECT e."employeeDesignation"
+          FROM "Entities".employees e
+          JOIN projectschema.clientproject cp ON cp.teamleaderid = e."employeeId"
+          WHERE cp.project_id = $1 AND e."role" = 'Team Leader'
+        `;
+        const tlResult = await pgPool.query(tlQuery, [projectIdNum]);
+        if (tlResult.rows.length === 0) {
+          return res.status(404).json({ status: false, message: "Team Leader not found for project." });
+        }
+        const tlDesignation = tlResult.rows[0].employeeDesignation;
+        const tlDeptMatch = tlDesignation.match(/\(([^)]+)\)$/);
+        tlDept = tlDeptMatch ? tlDeptMatch[1].trim() : null;
+
+        if (!tlDept) {
+          return res.status(400).json({ status: false, message: "Invalid Team Leader designation format (missing department)." });
+        }
+
+        // Check if same department (skip for solo – always eligible if solo)
+        if (assignedCount === 1) {
+          sameDept = true;  // Solo: Always same dept (no check needed)
+        } else {
+          sameDept = empDept === tlDept;
+        }
+
+        if (!sameDept) {
+          message = `Departments do not match: Employee (${empDept}) vs TL (${tlDept}).`;
+        } else {
+          // Same department: Apply solo or monitor logic
+          if (assignedCount === 1) {
+            // Solo case: Show if it's this employee and no monitor
+            if (isSoleEmployee && !hasMonitor) {
+              showChat = true;
+              message = "Eligible as solo employee (no monitor).";
+            } else {
+              message = "Not eligible: Not solo or monitor exists.";
+            }
+          } else if (assignedCount > 1) {
+            // Multiple case: Show only if this employee is the Project Monitor
+            if (isMonitor) {
+              showChat = true;
+              message = "Eligible as Project Monitor (multiple employees).";
+            } else {
+              message = "Not eligible: Multiple employees but not Project Monitor.";
+            }
+          }
+        }
       }
     }
 
     return res.status(200).json({
       status: true,
       showChat,
-      isMonitor,
-      hasMonitor,
+      message,  // For debugging
       isSoleEmployee,
-      sameDept,
+      hasMonitor,
+      isMonitor,
       assignedCount,
+      sameDept,
+      isHead,
     });
   } catch (e) {
     console.error("Server Error:", e);
@@ -1564,215 +1604,4 @@ router.get("/is_employee_chat_eligible/:projectId/:employeeId", async function (
   }
 });
 
-// Fetch TL-Monitor chats from projectTLClientChats
-router.get("/get_tl_monitor_chats/:projectId", async function (req, res) {
-  const { projectId } = req.params;
-  const projectIdNum = Number(projectId);
-  if (isNaN(projectIdNum)) {
-    return res.status(400).json({ status: false, message: "projectId must be a valid number." });
-  }
-
-  try {
-    const query = `
-      SELECT 
-        "TeamLeaderId", "MonitorId", "TLChats", "TLAudios", "MonitorChats", "MonitorAudios",
-        (SELECT "employeeName" FROM "Entities".employees WHERE "employeeId" = "TeamLeaderId") AS teamleadername,
-        (SELECT "employeePic" FROM "Entities".employees WHERE "employeeId" = "TeamLeaderId") AS teamleaderpic,
-        (SELECT "employeeName" FROM "Entities".employees WHERE "employeeId" = "MonitorId") AS monitorname,
-        (SELECT "employeePic" FROM "Entities".employees WHERE "employeeId" = "MonitorId") AS monitorpic
-      FROM projectschema.projectTLClientChats
-      WHERE "projectId" = $1
-    `;
-    const result = await pgPool.query(query, [projectIdNum]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ status: false, message: "No chats found for this project." });
-    }
-    const data = result.rows[0];
-    return res.status(200).json({ status: true, data });
-  } catch (e) {
-    console.error("Server Error:", e);
-    return res.status(500).json({ status: false, message: `Server Error: ${e.message}` });
-  }
-});
-
-// Add employee (Monitor) chat or audio
-router.post("/add_monitor_chat/:projectId", async function (req, res) {
-  const { projectId } = req.params;
-  const { type, data, timestamp, monitorid } = req.body;
-  const projectIdNum = Number(projectId);
-  if (isNaN(projectIdNum)) {
-    return res.status(400).json({ status: false, message: "projectId must be a valid number." });
-  }
-
-  try {
-    const checkQuery = `
-      SELECT "projectId", "TeamLeaderId", "MonitorId", "TLChats", "TLAudios", "MonitorChats", "MonitorAudios"
-      FROM projectschema.projectTLClientChats
-      WHERE "projectId" = $1
-    `;
-    let result = await pgPool.query(checkQuery, [projectIdNum]);
-    let updateData = {
-      projectId: projectIdNum,
-      TeamLeaderId: null,
-      MonitorId: monitorid,
-      TLChats: [],
-      TLAudios: [],
-      MonitorChats: [],
-      MonitorAudios: [],
-    };
-
-    if (result.rows.length > 0) {
-      updateData = result.rows[0];
-    } else {
-      const tlQuery = `
-        SELECT "teamleaderid" FROM projectschema.clientproject WHERE "project_id" = $1
-      `;
-      const tlResult = await pgPool.query(tlQuery, [projectIdNum]);
-      if (tlResult.rows.length === 0) {
-        return res.status(404).json({ status: false, message: "Team Leader not found for project." });
-      }
-      updateData.TeamLeaderId = tlResult.rows[0].teamleaderid;
-    }
-
-    if (type === "text") {
-      updateData.MonitorChats = [...(updateData.MonitorChats || []), JSON.stringify({ type, data, timestamp, seen_by: [] })];
-    } else if (type === "audio" || type === "file") {
-      updateData.MonitorAudios = [...(updateData.MonitorAudios || []), JSON.stringify({ type, data, timestamp, seen_by: [] })];
-    }
-
-    const upsertQuery = `
-      INSERT INTO projectschema.projectTLClientChats ("projectId", "TeamLeaderId", "MonitorId", "TLChats", "TLAudios", "MonitorChats", "MonitorAudios")
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT ("projectId") DO UPDATE
-      SET "MonitorId" = EXCLUDED."MonitorId",
-          "TLChats" = EXCLUDED."TLChats",
-          "TLAudios" = EXCLUDED."TLAudios",
-          "MonitorChats" = EXCLUDED."MonitorChats",
-          "MonitorAudios" = EXCLUDED."MonitorAudios"
-    `;
-    await pgPool.query(upsertQuery, [
-      updateData.projectId,
-      updateData.TeamLeaderId,
-      updateData.MonitorId,
-      JSON.stringify(updateData.TLChats),
-      JSON.stringify(updateData.TLAudios),
-      JSON.stringify(updateData.MonitorChats),
-      JSON.stringify(updateData.MonitorAudios),
-    ]);
-
-    return res.status(200).json({ status: true, message: "Chat added successfully." });
-  } catch (e) {
-    console.error("Server Error:", e);
-    return res.status(500).json({ status: false, message: `Server Error: ${e.message}` });
-  }
-});
-
-// Add TL chat or audio (unchanged, just for completeness)
-router.post("/add_tl_chat_to_monitor/:projectId", async function (req, res) {
-  const { projectId } = req.params;
-  const { type, data, timestamp, teamleaderid } = req.body;
-  const projectIdNum = Number(projectId);
-  if (isNaN(projectIdNum)) {
-    return res.status(400).json({ status: false, message: "projectId must be a valid number." });
-  }
-
-  try {
-    const checkQuery = `
-      SELECT "projectId", "TeamLeaderId", "MonitorId", "TLChats", "TLAudios", "MonitorChats", "MonitorAudios"
-      FROM projectschema.projectTLClientChats
-      WHERE "projectId" = $1
-    `;
-    let result = await pgPool.query(checkQuery, [projectIdNum]);
-    let updateData = {
-      projectId: projectIdNum,
-      TeamLeaderId: teamleaderid,
-      MonitorId: null,
-      TLChats: [],
-      TLAudios: [],
-      MonitorChats: [],
-      MonitorAudios: [],
-    };
-
-    if (result.rows.length > 0) {
-      updateData = result.rows[0];
-    }
-
-    if (type === "text") {
-      updateData.TLChats = [...(updateData.TLChats || []), JSON.stringify({ type, data, timestamp, seen_by: [] })];
-    } else if (type === "audio" || type === "file") {
-      updateData.TLAudios = [...(updateData.TLAudios || []), JSON.stringify({ type, data, timestamp, seen_by: [] })];
-    }
-
-    const upsertQuery = `
-      INSERT INTO projectschema.projectTLClientChats ("projectId", "TeamLeaderId", "MonitorId", "TLChats", "TLAudios", "MonitorChats", "MonitorAudios")
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT ("projectId") DO UPDATE
-      SET "TeamLeaderId" = EXCLUDED."TeamLeaderId",
-          "TLChats" = EXCLUDED."TLChats",
-          "TLAudios" = EXCLUDED."TLAudios",
-          "MonitorChats" = EXCLUDED."MonitorChats",
-          "MonitorAudios" = EXCLUDED."MonitorAudios"
-    `;
-    await pgPool.query(upsertQuery, [
-      updateData.projectId,
-      updateData.TeamLeaderId,
-      updateData.MonitorId,
-      JSON.stringify(updateData.TLChats),
-      JSON.stringify(updateData.TLAudios),
-      JSON.stringify(updateData.MonitorChats),
-      JSON.stringify(updateData.MonitorAudios),
-    ]);
-
-    return res.status(200).json({ status: true, message: "Chat added successfully." });
-  } catch (e) {
-    console.error("Server Error:", e);
-    return res.status(500).json({ status: false, message: `Server Error: ${e.message}` });
-  }
-});
-
-// Mark message as seen (unchanged, just for completeness)
-router.post("/mark_tl_monitor_message_seen/:projectId", async function (req, res) {
-  const { projectId } = req.params;
-  const { index, fromTL, type, viewer } = req.body;
-  const projectIdNum = Number(projectId);
-  if (isNaN(projectIdNum)) {
-    return res.status(400).json({ status: false, message: "projectId must be a valid number." });
-  }
-
-  try {
-    const query = `
-      SELECT "TLChats", "TLAudios", "MonitorChats", "MonitorAudios"
-      FROM projectschema.projectTLClientChats
-      WHERE "projectId" = $1
-    `;
-    const result = await pgPool.query(query, [projectIdNum]);
-    if (result.rows.length === 0) {
-      return res.status(404).json({ status: false, message: "No chats found for this project." });
-    }
-
-    const data = result.rows[0];
-    let chats = fromTL ? (type === "audio" ? data.TLAudios : data.TLChats) : (type === "audio" ? data.MonitorAudios : data.MonitorChats);
-    if (!chats || !Array.isArray(chats) || index >= chats.length) {
-      return res.status(400).json({ status: false, message: "Invalid message index." });
-    }
-
-    let chatObj = JSON.parse(chats[index]);
-    if (!chatObj.seen_by.includes(viewer)) {
-      chatObj.seen_by = [...new Set([...chatObj.seen_by, viewer])];
-      chats[index] = JSON.stringify(chatObj);
-
-      const updateQuery = `
-        UPDATE projectschema.projectTLClientChats
-        SET ${fromTL ? (type === "audio" ? '"TLAudios"' : '"TLChats"') : (type === "audio" ? '"MonitorAudios"' : '"MonitorChats"')} = $1
-        WHERE "projectId" = $2
-      `;
-      await pgPool.query(updateQuery, [JSON.stringify(chats), projectIdNum]);
-    }
-
-    return res.status(200).json({ status: true, message: "Message marked as seen." });
-  } catch (e) {
-    console.error("Server Error:", e);
-    return res.status(500).json({ status: false, message: `Server Error: ${e.message}` });
-  }
-});
 module.exports = router;
