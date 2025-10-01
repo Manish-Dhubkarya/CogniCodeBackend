@@ -1220,13 +1220,32 @@ router.post("/add_monitor_chat/:projectId", async function (req, res) {
       return res.status(404).json({ status: false, message: "Project not found." });
     }
 
-    // Check sender is Project Monitor for this project (fixed ambiguous column)
-    const monitorCheck = await pgPool.query(
-      'SELECT pm."employeeId" FROM projectschema."projectMonitors" pm JOIN "Entities".employees e ON pm."employeeId" = e."employeeId" WHERE pm."employeeId" = $1 AND pm."projectId" = $2 AND pm."status" = $3',
-      [monitorid, projectIdNum, 'Project Monitor']
-    );
-    if (monitorCheck.rows.length === 0) {
-      return res.status(404).json({ status: false, message: "Invalid Project Monitor for this project." });
+    // Check if solo employee case
+    const assignedQuery = `
+      SELECT DISTINCT employeeid::TEXT as employeeid_str
+      FROM projectschema."employeeRequests"
+      WHERE "project_id" = $1 AND "status" IN ('accepted', 'TLAssign')
+    `;
+    const assignedResult = await pgPool.query(assignedQuery, [projectIdNum]);
+    const assignedEmployees = assignedResult.rows.map(row => row.employeeid_str);
+    const assignedCount = assignedEmployees.length;
+    const isSolo = assignedCount === 1 && assignedEmployees[0] === monitorid;
+
+    let isValidSender = false;
+    if (isSolo) {
+      // For solo, allow without monitor check
+      isValidSender = true;
+    } else {
+      // For multiple, check if sender is Project Monitor
+      const monitorCheck = await pgPool.query(
+        'SELECT pm."employeeId" FROM projectschema."projectMonitors" pm JOIN "Entities".employees e ON pm."employeeId"::TEXT = $1 WHERE pm."projectId" = $2 AND pm."status" = $3',
+        [monitorid, projectIdNum, 'Project Monitor']
+      );
+      isValidSender = monitorCheck.rows.length > 0;
+    }
+
+    if (!isValidSender) {
+      return res.status(404).json({ status: false, message: isSolo ? "Invalid solo employee." : "Invalid Project Monitor for this project." });
     }
 
     // Check if row exists for this project, if not create it
@@ -1287,13 +1306,32 @@ router.post("/add_monitor_audio/:projectId", async function (req, res) {
       return res.status(404).json({ status: false, message: "Project not found." });
     }
 
-    // Check sender is Project Monitor for this project
-    const monitorCheck = await pgPool.query(
-      'SELECT "employeeId" FROM projectschema."projectMonitors" pm JOIN "Entities".employees e ON pm."employeeId" = e."employeeId" WHERE pm."employeeId" = $1 AND pm."projectId" = $2 AND pm."status" = $3',
-      [monitorid, projectIdNum, 'Project Monitor']
-    );
-    if (monitorCheck.rows.length === 0) {
-      return res.status(404).json({ status: false, message: "Invalid Project Monitor for this project." });
+    // Check if solo employee case
+    const assignedQuery = `
+      SELECT DISTINCT employeeid::TEXT as employeeid_str
+      FROM projectschema."employeeRequests"
+      WHERE "project_id" = $1 AND "status" IN ('accepted', 'TLAssign')
+    `;
+    const assignedResult = await pgPool.query(assignedQuery, [projectIdNum]);
+    const assignedEmployees = assignedResult.rows.map(row => row.employeeid_str);
+    const assignedCount = assignedEmployees.length;
+    const isSolo = assignedCount === 1 && assignedEmployees[0] === monitorid;
+
+    let isValidSender = false;
+    if (isSolo) {
+      // For solo, allow without monitor check
+      isValidSender = true;
+    } else {
+      // For multiple, check if sender is Project Monitor
+      const monitorCheck = await pgPool.query(
+        'SELECT "employeeId" FROM projectschema."projectMonitors" pm JOIN "Entities".employees e ON pm."employeeId" = e."employeeId" WHERE pm."employeeId" = $1 AND pm."projectId" = $2 AND pm."status" = $3',
+        [monitorid, projectIdNum, 'Project Monitor']
+      );
+      isValidSender = monitorCheck.rows.length > 0;
+    }
+
+    if (!isValidSender) {
+      return res.status(404).json({ status: false, message: isSolo ? "Invalid solo employee." : "Invalid Project Monitor for this project." });
     }
 
     // Check if row exists for this project, if not create it
@@ -1465,7 +1503,7 @@ router.get("/is_employee_chat_eligible/:projectId/:employeeId", async function (
       return res.status(404).json({ status: false, message: "Project not found." });
     }
 
-    // Step 2: Count unique assigned employees with 'accepted' or 'TLAssign' in employeeRequests (cast to string for comparison)
+    // Step 2: Count unique assigned employees (cast employeeid to TEXT for string comparison)
     const assignedQuery = `
       SELECT DISTINCT employeeid::TEXT as employeeid_str
       FROM projectschema."employeeRequests"
@@ -1485,11 +1523,11 @@ router.get("/is_employee_chat_eligible/:projectId/:employeeId", async function (
     const hasMonitorResult = await pgPool.query(hasMonitorQuery, [projectIdNum, 'Project Monitor']);
     const hasMonitor = hasMonitorResult.rows.length > 0;
 
-    // Step 4: Check if current employee is Project Monitor
+    // Step 4: Check if current employee is Project Monitor (cast to TEXT)
     const isMonitorQuery = `
       SELECT "employeeId"
       FROM projectschema."projectMonitors"
-      WHERE "projectId" = $1 AND "employeeId" = $2 AND "status" = $3
+      WHERE "projectId" = $1 AND "employeeId"::TEXT = $2 AND "status" = $3
     `;
     const isMonitorResult = await pgPool.query(isMonitorQuery, [projectIdNum, employeeId, 'Project Monitor']);
     const isMonitor = isMonitorResult.rows.length > 0;
@@ -1510,7 +1548,7 @@ router.get("/is_employee_chat_eligible/:projectId/:employeeId", async function (
     const empDeptMatch = employeeDesignation.match(/\(([^)]+)\)$/);
     const empDept = empDeptMatch ? empDeptMatch[1].trim() : null;
 
-    // Step 5.1: Check if employee is Project Head (in "Entities".head)
+    // Step 5.1: Check if employee is Project Head
     const headCheck = await pgPool.query(
       'SELECT "headId" FROM "Entities".head WHERE "headId" = $1',
       [employeeId]
@@ -1523,59 +1561,54 @@ router.get("/is_employee_chat_eligible/:projectId/:employeeId", async function (
     let tlDept = null;
 
     if (role === 'Team Leader' || isHead) {
-      // Team Leader or Head always shows chat
       showChat = true;
       message = "Eligible as Team Leader or Head";
-      sameDept = true;  // Not applicable, but set for return
+      sameDept = true;
     } else {
-      // For regular employees
       if (assignedCount === 0) {
         message = "No assignments found.";
       } else {
-        if (!empDept) {
-          return res.status(400).json({ status: false, message: "Invalid employee designation format (missing department)." });
-        }
-
-        // Get Team Leader's designation and department
-        const tlQuery = `
-          SELECT e."employeeDesignation"
-          FROM "Entities".employees e
-          JOIN projectschema.clientproject cp ON cp.teamleaderid = e."employeeId"
-          WHERE cp.project_id = $1 AND e."role" = 'Team Leader'
-        `;
-        const tlResult = await pgPool.query(tlQuery, [projectIdNum]);
-        if (tlResult.rows.length === 0) {
-          return res.status(404).json({ status: false, message: "Team Leader not found for project." });
-        }
-        const tlDesignation = tlResult.rows[0].employeeDesignation;
-        const tlDeptMatch = tlDesignation.match(/\(([^)]+)\)$/);
-        tlDept = tlDeptMatch ? tlDeptMatch[1].trim() : null;
-
-        if (!tlDept) {
-          return res.status(400).json({ status: false, message: "Invalid Team Leader designation format (missing department)." });
-        }
-
-        // Check if same department (skip for solo – always eligible if solo)
+        // For solo, skip dept check
         if (assignedCount === 1) {
-          sameDept = true;  // Solo: Always same dept (no check needed)
+          sameDept = true;  // Solo: Always eligible, no dept check
         } else {
+          if (!empDept) {
+            return res.status(400).json({ status: false, message: "Invalid employee designation format (missing department)." });
+          }
+
+          const tlQuery = `
+            SELECT e."employeeDesignation"
+            FROM "Entities".employees e
+            JOIN projectschema.clientproject cp ON cp.teamleaderid = e."employeeId"
+            WHERE cp.project_id = $1 AND e."role" = 'Team Leader'
+          `;
+          const tlResult = await pgPool.query(tlQuery, [projectIdNum]);
+          if (tlResult.rows.length === 0) {
+            return res.status(404).json({ status: false, message: "Team Leader not found for project." });
+          }
+          const tlDesignation = tlResult.rows[0].employeeDesignation;
+          const tlDeptMatch = tlDesignation.match(/\(([^)]+)\)$/);
+          tlDept = tlDeptMatch ? tlDeptMatch[1].trim() : null;
+
+          if (!tlDept) {
+            return res.status(400).json({ status: false, message: "Invalid Team Leader designation format (missing department)." });
+          }
+
           sameDept = empDept === tlDept;
         }
 
         if (!sameDept) {
           message = `Departments do not match: Employee (${empDept}) vs TL (${tlDept}).`;
         } else {
-          // Same department: Apply solo or monitor logic
+          // Eligible logic
           if (assignedCount === 1) {
-            // Solo case: Show if it's this employee and no monitor
-            if (isSoleEmployee && !hasMonitor) {
+            if (isSoleEmployee) {
               showChat = true;
-              message = "Eligible as solo employee (no monitor).";
+              message = "Eligible as solo employee.";
             } else {
-              message = "Not eligible: Not solo or monitor exists.";
+              message = "Not the assigned employee.";
             }
           } else if (assignedCount > 1) {
-            // Multiple case: Show only if this employee is the Project Monitor
             if (isMonitor) {
               showChat = true;
               message = "Eligible as Project Monitor (multiple employees).";
