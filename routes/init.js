@@ -6,15 +6,22 @@ const initializeDatabase1 = async () => {
       CREATE SCHEMA IF NOT EXISTS "Entities";
 
       CREATE TABLE IF NOT EXISTS "Entities".head (
-        "headId" INTEGER NOT NULL PRIMARY KEY,
+        "headId" SERIAL PRIMARY KEY,  -- Auto-increment: no need to specify in INSERT
         "headName" VARCHAR(100) NOT NULL,
         "headMail" VARCHAR(100) NOT NULL,
         "headMobile" VARCHAR(15) NOT NULL,
         "headSecurityKey" VARCHAR(10) NOT NULL,
         "headPic" TEXT,
         "role" VARCHAR(20) NOT NULL DEFAULT 'Head',
-        "password" TEXT NOT NULL DEFAULT 'himashu'
+        "password" TEXT NOT NULL DEFAULT 'himanshu'
       );
+
+      -- Insert: headId auto-fills (e.g., 1); headPic defaults to NULL
+     INSERT INTO "Entities".head 
+("headId", "headName", "headMail", "headMobile", "headSecurityKey", "headPic", "role", "password") 
+VALUES
+(100, 'Himanshu Verma', 'cognicodeoffice@gmail.com', '9999999999', 'SEC123', NULL, 'Head', 'himanshu')
+ON CONFLICT ("headId") DO NOTHING;
 
       CREATE TABLE IF NOT EXISTS "Entities"."TeamLeaderSecureKey" (
         "key_id" VARCHAR(100) PRIMARY KEY,
