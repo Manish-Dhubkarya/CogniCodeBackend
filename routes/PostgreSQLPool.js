@@ -2,13 +2,8 @@ require('dotenv').config();
 const { Pool } = require('pg');
 
 const pgPool = new Pool({
-  host: process.env.PG_HOST,
-  user: process.env.PG_USER,
-  password: process.env.PG_PASSWORD,
-  database: process.env.PG_DATABASE,
-  port: process.env.PG_PORT,
+  connectionString: process.env.PG_EXTERNAL_DB,  // Uses the updated URL with sslmode=prefer
   max: 10, // Connection pool limit
-  ssl: { rejectUnauthorized: false }  // Required for Render external connections (TLS encryption)
 });
 
 pgPool.on('error', (err) => {
